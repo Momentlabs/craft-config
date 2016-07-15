@@ -4,6 +4,7 @@ import (
   "fmt"
   "gopkg.in/alecthomas/kingpin.v2"
   "os"
+  "log"
 )
 
 var (
@@ -17,6 +18,9 @@ var (
   serverConfig                      *kingpin.CmdClause
   listServerConfig                  *kingpin.CmdClause
   serverConfigFileName              string
+  modifyServerConfig                *kingpin.CmdClause
+  newServerConfigFileName           string
+  keyValueMap                       map[string]string
 )
 
 func init() {
@@ -26,15 +30,21 @@ func init() {
   interactive = app.Command("interactive", "Prompt for commands.")
 
   serverConfig = app.Command("server-config", "Manage a server config.")
+
   listServerConfig = serverConfig.Command("list", "List out the server config")
   listServerConfig.Arg("server-config-file-name", "Name of the server config file").Required().StringVar(&serverConfigFileName)
 
+  modifyServerConfig = serverConfig.Command("modify", "change a key value. Key must be present in source file.")
+  modifyServerConfig.Arg("entries", "Key value pair configuration entries.").Required().StringMapVar(&keyValueMap)
+  modifyServerConfig.Flag("source-file", "Source configuration to read.").Default("server.cfg").Short('s').StringVar(&serverConfigFileName)
+  modifyServerConfig.Flag("dest-file", "Modified file to write. If not then new config goes to stdout.").Required().Short('d').StringVar(&newServerConfigFileName)
 
   kingpin.CommandLine.Help = `A command-line minecraft config tool.`
 }
 
 func main() {
 
+  keyValueMap = make(map[string]string)
   // Parse the command line to fool with flags and get the command we'll execeute.
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -42,26 +52,34 @@ func main() {
     fmt.Printf("Starting up.")
    }
 
-   // This some state passed to each command (eg. an AWS session or connection)
-   // So not usually a string.
-   appContext := "AppContext"
-
   // List of commands as parsed matched against functions to execute the commands.
-  commandMap := map[string]func(string) {
+  commandMap := map[string]func() {
     listServerConfig.FullCommand(): doListServerConfig,
+    modifyServerConfig.FullCommand(): doModifyServerConfig,
   }
 
   // Execute the command.
   if interactive.FullCommand() == command {
     doInteractive()
   } else {
-    commandMap[command](appContext)
+    commandMap[command]()
   }
 }
 
-func doListServerConfig(ctxt string) {
+func doListServerConfig() {
   serverConfig := newConfigFromFile(serverConfigFileName)
-  for key, value := range *serverConfig.Config {
-    fmt.Printf("%s: %s\n", key, value)
+  serverConfig.List()
+}
+
+func doModifyServerConfig() {
+  serverConfig := newConfigFromFile(serverConfigFileName)
+  for k, v := range keyValueMap {
+    if verbose {fmt.Printf("Modifying: \"%s\" = \"%s\"\n", k, v)}
+    if serverConfig.HasKey(k) {
+      serverConfig.SetEntry(k,v)
+      serverConfig.WriteToFile(newServerConfigFileName)
+    } else {
+      log.Fatalf("Key \"%s\" not found in configuration \"%s\". No files updated.\n",k,serverConfigFileName)
+    }
   }
 }

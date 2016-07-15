@@ -19,6 +19,24 @@ var (
   interTestString []string
 
   interTest *kingpin.CmdClause
+
+  // Read a configureation file in the current config
+  currentServerConfigFileName string
+  currentServerConfig *ServerConfig
+  interReadServerConfigFile *kingpin.CmdClause
+
+  // Print the current configuration out.
+  interPrintServerConfig *kingpin.CmdClause
+
+  // Write the current configuraiton out.
+  interNewServerConfigFileName string
+  interWriteServerConfig *kingpin.CmdClause
+
+  // Set a key value, key must already be present.
+  interSetServerConfigValue *kingpin.CmdClause
+  currentKey string
+  currentValue string
+
 )
 
 func init() {
@@ -30,6 +48,22 @@ func init() {
   interQuit = interApp.Command("quit", "exit the program.")
 
   interTest = interApp.Command("test", "Test command for demonstration")
+
+  // Read and manipulate a configuration file.
+  interReadServerConfigFile = interApp.Command("read-config", "read a server config file in.")
+  interReadServerConfigFile.Arg("file-name", "The file to read the configuration file from.").
+    Required().StringVar(&currentServerConfigFileName)
+
+  interPrintServerConfig = interApp.Command("print-config", "print the server config file.")
+
+  interWriteServerConfig = interApp.Command("write-config", "write the server config file.")
+  interWriteServerConfig.Arg("file-name", "The file to write the confiugration file to.").
+    Required().StringVar(&interNewServerConfigFileName)
+
+  interSetServerConfigValue = interApp.Command("set-config-value", "set a configuration value - key must already be present.")
+  interSetServerConfigValue.Arg("key", "Key for the setting - must be already presetn int he configuration").
+    Required().StringVar(&currentKey)
+  interSetServerConfigValue.Arg("value", "Value for the setting.").Required().StringVar(&currentValue)
 }
 
 
@@ -55,11 +89,42 @@ func doICommand(line string, ctxt string) (err error) {
       case interVerbose.FullCommand(): err = doVerbose()
       case interExit.FullCommand(): err = doQuit()
       case interQuit.FullCommand(): err = doQuit()
-      case interTest.FullCommand(): err = doTest()
+      // case interTest.FullCommand(): err = doTest()
+      case interReadServerConfigFile.FullCommand(): err = doReadServerConfigFile()
+      case interPrintServerConfig.FullCommand(): err = doPrintServerConfig()
+      case interWriteServerConfig.FullCommand(): err = doWriteServerConfig()
+      case interSetServerConfigValue.FullCommand(): err = doSetServerConfigValue()
     }
   }
   return err
 }
+
+// Interactive Command processing
+func doReadServerConfigFile() (error) {
+  currentServerConfig = newConfigFromFile(currentServerConfigFileName)
+  return nil
+}
+
+func doPrintServerConfig() (error) {
+  currentServerConfig.List()
+  return nil
+}
+
+func doWriteServerConfig() (error) {
+  if iVerbose {
+    fmt.Printf("Writing out file: \"%s\"", interNewServerConfigFileName)
+  }
+  currentServerConfig.WriteToFile(newServerConfigFileName)
+  return nil
+}
+
+func doSetServerConfigValue() (error) {
+  currentServerConfig.SetEntry(currentKey, currentValue)
+  return nil
+}
+
+
+// Interactive Mode support functions.
 
 func doTest() (error) {
   fmt.Println("Test command executed.")
