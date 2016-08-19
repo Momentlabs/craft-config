@@ -7,6 +7,7 @@ import (
   "fmt"
   "io"
   "craft-config/minecraft"
+  "github.com/op/go-logging"
 )
 
 var (
@@ -141,8 +142,10 @@ func toggleVerbose() bool {
 
 func doVerbose() (error) {
   if toggleVerbose() {
+    logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
     fmt.Println("Verbose is on.")
   } else {
+    logging.SetLevel(logging.INFO, "craft-config/minecraft")
     fmt.Println("Verbose is off.")
   }
   return nil

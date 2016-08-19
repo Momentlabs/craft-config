@@ -16,7 +16,8 @@ var (
 )
 
 func init() {
-  logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
+  // logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
+  logging.SetLevel(logging.INFO, "craft-config/minecraft")
 }
 
 // Make a zipfile of the server directory in directoryName.
@@ -34,6 +35,11 @@ func ArchiveServer(directoryName, zipfileName string) (err error) {
   dirInfo, err := dir.Stat()
   if err != nil { return fmt.Errorf("ArchiveServer: can't stat directory %s: %s", directoryName, err) }
   if !dirInfo.IsDir() { return fmt.Errorf("ArchiveServer: server directory %s is not a directory.") }
+
+  currentDir, err := os.Getwd()
+  if err != nil { return fmt.Errorf("ArchiveServer: can't get the current directory: %s", err) }
+  defer os.Chdir(currentDir)
+
   err = dir.Chdir()
   if err != nil { return fmt.Errorf("ArchiveServer: can't change to directory %s: %s", directoryName, err) }
 
