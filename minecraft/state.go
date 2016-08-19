@@ -53,7 +53,8 @@ func ArchiveServer(directoryName, zipfileName string) (err error) {
   fileNames := getServerFileNames()
   log.Debugf("ArchiveServer: will save %d entries to archive.\n", len(fileNames))
   for _, fileName := range fileNames {
-    err = writeFileToZip(directoryName, fileName, archive)
+    err = writeFileToZip("", fileName, archive)
+    // err = writeFileToZip(directoryName, fileName, archive)
     if err != nil {return fmt.Errorf("ArchiveServer: can't write file \"%s\" to archive: %s", fileName, err)}
   }
   return err
