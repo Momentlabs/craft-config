@@ -6,14 +6,13 @@ import (
   // "io/ioutil"
   "github.com/go-ini/ini"
   // "errors"
-  "log"
+  // "log"
 )
 
 func init() {
   ini.PrettyFormat = false
 }
 type ServerConfig struct {
-  // ConfigMap *map[string]string
   Config *ini.File
 }
 
@@ -47,7 +46,7 @@ func (cfg *ServerConfig) SetEntry(key string, value string) {
     checkFatalError(err)
     entry.SetValue(value)
   } else {
-    log.Printf("Key \"%s\" not present in config. Configuration unmodified.", key)
+    log.Notice("Key \"%s\" not present in config. Configuration unmodified.", key)
   }
 }
 

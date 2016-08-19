@@ -5,6 +5,8 @@ import (
   "gopkg.in/alecthomas/kingpin.v2"
   "os"
   "log"
+  "craft-config/interactive"
+  "craft-config/minecraft"
 )
 
 var (
@@ -13,7 +15,7 @@ var (
   region                            string
 
   // Prompt for Commands
-  interactive                       *kingpin.CmdClause
+  interactiveCmd                       *kingpin.CmdClause
 
   serverConfig                      *kingpin.CmdClause
   listServerConfig                  *kingpin.CmdClause
@@ -27,7 +29,7 @@ func init() {
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").Short('v').BoolVar(&verbose)
 
-  interactive = app.Command("interactive", "Prompt for commands.")
+  interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
   serverConfig = app.Command("server-config", "Manage a server config.")
 
@@ -59,20 +61,20 @@ func main() {
   }
 
   // Execute the command.
-  if interactive.FullCommand() == command {
-    doInteractive()
+  if interactiveCmd.FullCommand() == command {
+    interactive.DoInteractive()
   } else {
     commandMap[command]()
   }
 }
 
 func doListServerConfig() {
-  serverConfig := newConfigFromFile(serverConfigFileName)
+  serverConfig := minecraft.NewConfigFromFile(serverConfigFileName)
   serverConfig.List()
 }
 
 func doModifyServerConfig() {
-  serverConfig := newConfigFromFile(serverConfigFileName)
+  serverConfig := minecraft.NewConfigFromFile(serverConfigFileName)
   for k, v := range keyValueMap {
     if verbose {fmt.Printf("Modifying: \"%s\" = \"%s\"\n", k, v)}
     if serverConfig.HasKey(k) {

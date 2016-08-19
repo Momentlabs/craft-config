@@ -11,61 +11,70 @@ import (
 
 var (
 
-  interApp *kingpin.Application
+  app *kingpin.Application
+  testString []string
 
-  interExit *kingpin.CmdClause
-  interQuit *kingpin.CmdClause
-  interVerbose *kingpin.CmdClause
-  iVerbose bool
-  interTestString []string
+  exitCmd *kingpin.CmdClause
+  quitCmd *kingpin.CmdClause
+  verboseCmd *kingpin.CmdClause
+  verbose bool
 
-
-  // Read a configureation file in the current config
-  currentServerConfigFileName string
+  // Read a configuration file in the current config
+  currentServerConfigFileNameArg string
   currentServerConfig *minecraft.ServerConfig
-  interReadServerConfigFile *kingpin.CmdClause
+
+  readServerConfigFileCmd *kingpin.CmdClause
 
   // Print the current configuration out.
-  interPrintServerConfig *kingpin.CmdClause
+  printServerConfigCmd *kingpin.CmdClause
 
   // Write the current configuraiton out.
-  interNewServerConfigFileName string
-  interWriteServerConfig *kingpin.CmdClause
+  newServerConfigFileNameArg string
+  writeServerConfigCmd *kingpin.CmdClause
 
   // Set a key value, key must already be present.
-  interSetServerConfigValue *kingpin.CmdClause
-  currentKey string
-  currentValue string
+  setServerConfigValueCmd *kingpin.CmdClause
+  currentKeyArg string
+  currentValueArg string
+
+  // Archive state
+  archiveServerCmd *kingpin.CmdClause
+  archiveFileNameArg string
+  serverDirectoryNameArg string
 
 )
 
 func init() {
-  interApp = kingpin.New("", "Interactive mode.").Terminate(doTerminate)
+  app = kingpin.New("", "Interactive mode.").Terminate(doTerminate)
 
   // state
-  interVerbose = interApp.Command("verbose", "toggle verbose mode.")
-  interExit = interApp.Command("exit", "exit the program. <ctrl-D> works too.")
-  interQuit = interApp.Command("quit", "exit the program.")
+  verboseCmd = app.Command("verbose", "toggle verbose mode.")
+  exitCmd = app.Command("exit", "exit the program. <ctrl-D> works too.")
+  quitCmd = app.Command("quit", "exit the program.")
 
   // Read and manipulate a configuration file.
-  interReadServerConfigFile = interApp.Command("read-config", "read a server config file in.")
-  interReadServerConfigFile.Arg("file-name", "The file to read the configuration file from.").Required().StringVar(&currentServerConfigFileName)
+  readServerConfigFileCmd = app.Command("read-config", "read a server config file in.")
+  readServerConfigFileCmd.Arg("file-name", "The file to read the configuration file from.").Required().StringVar(&currentServerConfigFileNameArg)
 
-  interPrintServerConfig = interApp.Command("print-config", "print the server config file.")
+  printServerConfigCmd = app.Command("print-config", "print the server config file.")
 
-  interWriteServerConfig = interApp.Command("write-config", "write the server config file.")
-  interWriteServerConfig.Arg("file-name", "The file to write the confiugration file to.").Required().StringVar(&interNewServerConfigFileName)
+  writeServerConfigCmd = app.Command("write-config", "write the server config file.")
+  writeServerConfigCmd.Arg("file-name", "The file to write the confiugration file to.").Required().StringVar(&newServerConfigFileNameArg)
 
-  interSetServerConfigValue = interApp.Command("set-config-value", "set a configuration value - key must already be present.")
-  interSetServerConfigValue.Arg("key", "Key for the setting - must be already presetn int he configuration").Required().StringVar(&currentKey)
-  interSetServerConfigValue.Arg("value", "Value for the setting.").Required().StringVar(&currentValue)
+  setServerConfigValueCmd = app.Command("set-config-value", "set a configuration value - key must already be present.")
+  setServerConfigValueCmd.Arg("key", "Key for the setting - must be already presetn int he configuration").Required().StringVar(&currentKeyArg)
+  setServerConfigValueCmd.Arg("value", "Value for the setting.").Required().StringVar(&currentValueArg)
+
+  archiveServerCmd = app.Command("archive", "Archive a server into a zip file.")
+  archiveServerCmd.Arg("server-directory", "Relative location of server.").Default("server").StringVar(&serverDirectoryNameArg)
+  archiveServerCmd.Arg("archive-file", "Name of archive file.").Default("server.zip").StringVar(&archiveFileNameArg)
 }
 
 
 func doICommand(line string, ctxt string) (err error) {
 
   // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
-  interTestString = []string{}
+  testString = []string{}
 
   // Prepare a line for parsing
   line = strings.TrimRight(line, "\n")
@@ -75,20 +84,20 @@ func doICommand(line string, ctxt string) (err error) {
     return nil
   }
 
-  command, err := interApp.Parse(fields)
+  command, err := app.Parse(fields)
   if err != nil {
     fmt.Printf("Command error: %s.\nType help for a list of commands.\n", err)
     return nil
   } else {
     switch command {
-      case interVerbose.FullCommand(): err = doVerbose()
-      case interExit.FullCommand(): err = doQuit()
-      case interQuit.FullCommand(): err = doQuit()
-      // case interTest.FullCommand(): err = doTest()
-      case interReadServerConfigFile.FullCommand(): err = doReadServerConfigFile()
-      case interPrintServerConfig.FullCommand(): err = doPrintServerConfig()
-      case interWriteServerConfig.FullCommand(): err = doWriteServerConfig()
-      case interSetServerConfigValue.FullCommand(): err = doSetServerConfigValue()
+      case verboseCmd.FullCommand(): err = doVerbose()
+      case exitCmd.FullCommand(): err = doQuit()
+      case quitCmd.FullCommand(): err = doQuit()
+      case readServerConfigFileCmd.FullCommand(): err = doReadServerConfigFile()
+      case printServerConfigCmd.FullCommand(): err = doPrintServerConfig()
+      case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
+      case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
+      case archiveServerCmd.FullCommand(): err = doArchiveServer()
     }
   }
   return err
@@ -96,7 +105,7 @@ func doICommand(line string, ctxt string) (err error) {
 
 // Interactive Command processing
 func doReadServerConfigFile() (error) {
-  currentServerConfig = minecraft.NewConfigFromFile(currentServerConfigFileName)
+  currentServerConfig = minecraft.NewConfigFromFile(currentServerConfigFileNameArg)
   return nil
 }
 
@@ -106,23 +115,28 @@ func doPrintServerConfig() (error) {
 }
 
 func doWriteServerConfig() (error) {
-  if iVerbose {
-    fmt.Printf("Writing out file: \"%s\"", interNewServerConfigFileName)
+  if verbose {
+    fmt.Printf("Writing out file: \"%s\"", newServerConfigFileNameArg)
   }
-  currentServerConfig.WriteToFile(interNewServerConfigFileName)
+  currentServerConfig.WriteToFile(newServerConfigFileNameArg)
   return nil
 }
 
 func doSetServerConfigValue() (error) {
-  currentServerConfig.SetEntry(currentKey, currentValue)
+  currentServerConfig.SetEntry(currentKeyArg, currentValueArg)
   return nil
+}
+
+func doArchiveServer() (error) {
+  err := minecraft.ArchiveServer(serverDirectoryNameArg, archiveFileNameArg)
+  return err
 }
 
 
 // Interactive Mode support functions.
 func toggleVerbose() bool {
-  iVerbose = !iVerbose
-  return iVerbose
+  verbose = !verbose
+  return verbose
 }
 
 func doVerbose() (error) {

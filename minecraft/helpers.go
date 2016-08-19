@@ -1,11 +1,13 @@
 package minecraft
   
 import (
-  "log"
+  "os"
+  // "log"
 )
 
 func checkFatalError(e error) {
   if e != nil {
-    log.Fatal(e)
+    log.Critical(e)
+    os.Exit(-1)
   }
 }
