@@ -7,6 +7,7 @@ import (
   "fmt"
   "io"
   "craft-config/minecraft"
+  "github.com/aws/aws-sdk-go/aws"
   "github.com/op/go-logging"
 )
 
@@ -39,9 +40,13 @@ var (
   currentValueArg string
 
   // Archive state
+  archiveCmd *kingpin.CmdClause
   archiveServerCmd *kingpin.CmdClause
+  archivePublishCmd *kingpin.CmdClause
   archiveFileNameArg string
   serverDirectoryNameArg string
+  bucketNameArg string
+  userNameArg string
 
 )
 
@@ -66,13 +71,18 @@ func init() {
   setServerConfigValueCmd.Arg("key", "Key for the setting - must be already presetn int he configuration").Required().StringVar(&currentKeyArg)
   setServerConfigValueCmd.Arg("value", "Value for the setting.").Required().StringVar(&currentValueArg)
 
-  archiveServerCmd = app.Command("archive", "Archive a server into a zip file.")
+  archiveCmd := app.Command("archive", "Context for managing archives.")
+  archiveServerCmd = archiveCmd.Command("server", "Archive a server into a zip file.")
   archiveServerCmd.Arg("server-directory", "Relative location of server.").Default("server").StringVar(&serverDirectoryNameArg)
-  archiveServerCmd.Arg("archive-file", "Name of archive file.").Default("server.zip").StringVar(&archiveFileNameArg)
+  archiveServerCmd.Arg("archive-file", "Name of archive file to create.").Default("server.zip").StringVar(&archiveFileNameArg)
+  archivePublishCmd = archiveCmd.Command("publish", "Publish and archive to S3.")
+  archivePublishCmd.Arg("user", "User of archive.").Required().StringVar(&userNameArg)
+  archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default("server.zip").StringVar(&archiveFileNameArg)
+  archivePublishCmd.Arg("s3-bucket", "Name of S3 bucket to publish archive to.").Default("craft-config-test").StringVar(&bucketNameArg)
 }
 
 
-func doICommand(line string, ctxt string) (err error) {
+func doICommand(line string, awsConfig *aws.Config) (err error) {
 
   // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
   testString = []string{}
@@ -99,6 +109,7 @@ func doICommand(line string, ctxt string) (err error) {
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
       case archiveServerCmd.FullCommand(): err = doArchiveServer()
+      case archivePublishCmd.FullCommand(): err = doPublishArchive(awsConfig)
     }
   }
   return err
@@ -133,6 +144,13 @@ func doArchiveServer() (error) {
   return err
 }
 
+func doPublishArchive(awsConfig *aws.Config) (error) {
+  resp, err := minecraft.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, awsConfig)
+  if err == nil {
+    fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
+  }
+  return err
+}
 
 // Interactive Mode support functions.
 func toggleVerbose() bool {
@@ -179,8 +197,8 @@ func promptLoop(prompt string, process func(string) (error)) (err error) {
 }
 
 // This gets called from the main program, presumably from the 'interactive' command on main's command line.
-func DoInteractive() {
-  xICommand := func(line string) (err error) {return doICommand(line, "craft-config")}
+func DoInteractive(awsConfig *aws.Config) {
+  xICommand := func(line string) (err error) {return doICommand(line, awsConfig)}
   prompt := "> "
   err := promptLoop(prompt, xICommand)
   if err != nil {fmt.Printf("Error - %s.\n", err)}

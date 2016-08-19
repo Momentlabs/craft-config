@@ -5,8 +5,11 @@ import (
   "gopkg.in/alecthomas/kingpin.v2"
   "os"
   "log"
+  "ecs-pilot/awslib"
   "craft-config/interactive"
   "craft-config/minecraft"
+  // "github.com/aws/aws-sdk-go/aws"
+  "github.com/op/go-logging"
 )
 
 var (
@@ -49,10 +52,13 @@ func main() {
   keyValueMap = make(map[string]string)
   // Parse the command line to fool with flags and get the command we'll execeute.
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
+  if verbose {
+    logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
+  }
 
-   if verbose {
-    fmt.Printf("Starting up.")
-   }
+
+  awsConfig := awslib.GetConfig("minecraft")
+  fmt.Printf("%s\n", awslib.AccountDetailsString(awsConfig))
 
   // List of commands as parsed matched against functions to execute the commands.
   commandMap := map[string]func() {
@@ -62,7 +68,7 @@ func main() {
 
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
-    interactive.DoInteractive()
+    interactive.DoInteractive(awsConfig)
   } else {
     commandMap[command]()
   }

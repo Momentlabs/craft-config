@@ -1,13 +1,20 @@
 package minecraft
 
 import(
+  "bytes"
   "fmt"
   "io"
+  "net/http"
   "os"
   "strings"
+  "time"
   "archive/zip"
   "path/filepath"
   "github.com/op/go-logging"
+  "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/aws/session"
+  "github.com/aws/aws-sdk-go/service/s3"
+  // "github.com/rlmcpherson/s3gof3r"
 )
 
 
@@ -41,7 +48,7 @@ func ArchiveServer(directoryName, zipfileName string) (err error) {
   defer os.Chdir(currentDir)
 
   err = dir.Chdir()
-  if err != nil { return fmt.Errorf("ArchiveServer: can't change to directory %s: %s", directoryName, err) }
+  if err != nil { return fmt.Errorf("ArchiveServer: can't change to server directory %s: %s", directoryName, err) }
 
   fileNames := getServerFileNames()
   log.Debugf("ArchiveServer: will save %d entries to archive.\n", len(fileNames))
@@ -85,12 +92,12 @@ func writeFileToZip(baseDir, fileName string, archive *zip.Writer) (err error) {
       header.Method = zip.Deflate // Is this necessary?
     }
 
-    log.Debugf("Writing Header with Name: %s", header.Name)
+    log.Debugf("Writing Zip Header with Name: %s", header.Name)
     writer, err := archive.CreateHeader(header)
     if err != nil { return fmt.Errorf("Couldn't write header to archive: %s", err)}
 
     if !info.IsDir() {
-        log.Debugf("Opening and copying file: %s", path)
+        log.Debugf("Opening and copying file to archive: %s", path)
         file, err := os.Open(path)
         if err != nil { fmt.Errorf("Couldn't open file %s: %s", path, err) }
         _, err = io.Copy(writer, file)
@@ -102,6 +109,65 @@ func writeFileToZip(baseDir, fileName string, archive *zip.Writer) (err error) {
   return err
 }
 
+type PublishedArchiveResponse struct {
+  ArchiveFilename string
+  BucketName string
+  StoredPath string
+  UserName string
+  PutObjectOutput *s3.PutObjectOutput
+}
+// Puts the archive in the provided bucket on S3 in a 'directory' for the user. Bucket  must already exist.
+// Config must have keys and region.
+// The structure in the bucket is:
+//    bucket:/<username>/archives/<ansi-time-string>-<username>-archive
+func PublishArchive(archiveFileName string, bucketName string, user string, config *aws.Config) (*PublishedArchiveResponse, error) {
+  s3svc := s3.New(session.New(config))
+  file, err := os.Open(archiveFileName)
+  if err != nil {return nil, fmt.Errorf("PublishArchive: Co´uldn't open archive file: %s: %s", archiveFileName, err)}
+  defer file.Close()
+
+  fileInfo, err := file.Stat()
+  if err != nil {return nil, fmt.Errorf("PublishArchive: Couldn't stat archive file: %s: %s", archiveFileName, err)}
+  fileSize := fileInfo.Size()
+
+  buffer := make([]byte, fileSize)
+  fileType := http.DetectContentType(buffer)
+  _, err = file.Read(buffer)
+  if err != nil {return nil, fmt.Errorf("PublishArchive: Couldn't read archive file: %s: %s", archiveFileName, err)}
+  fileBytes := bytes.NewReader(buffer)
+
+  path := getArchiveName(user)
+  log.Debugf("PublishArchive: writing %s with %d bytes, type: %s to %s:%s", archiveFileName, fileSize, fileType, bucketName, path)
+
+  // TOTO: Lookinto this and in particular figure out how to use an iamrole for this.
+  aclString := "public-read"
+
+  params := &s3.PutObjectInput{
+    Bucket: aws.String(bucketName),
+    Key: aws.String(path),
+    ACL: aws.String(aclString),
+    Body: fileBytes,
+    ContentLength: aws.Int64(fileSize),
+    ContentType: aws.String(fileType),
+  }
+  resp, err := s3svc.PutObject(params)
+
+  returnResp := &PublishedArchiveResponse{
+    ArchiveFilename: archiveFileName,
+    BucketName: bucketName,
+    StoredPath: path,
+    UserName: user,
+    PutObjectOutput: resp,
+  }
+
+  return returnResp, err
+}
+
+// TODO: Need to obscure this if we're going to make it publicly readable.
+func getArchiveName(user string) string {
+  timeString := time.Now().Format(time.RFC3339)
+  return user + "/archives/" + timeString + "-" + user + "-archive"
+}
 
 // Replace .. and absolute paths in archives.
 func sanitizedName(fileName string) string {

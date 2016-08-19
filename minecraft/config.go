@@ -3,10 +3,7 @@ package minecraft
 import (
   "fmt"
   "os"
-  // "io/ioutil"
   "github.com/go-ini/ini"
-  // "errors"
-  // "log"
 )
 
 func init() {
