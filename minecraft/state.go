@@ -85,6 +85,8 @@ func writeFileToZip(baseDir, fileName string, archive *zip.Writer) (err error) {
 
     if baseDir != "" {
       header.Name = filepath.Join(baseDir, path)
+    } else {
+      header.Name = path
     }
 
     if info.IsDir() {
@@ -124,7 +126,7 @@ type PublishedArchiveResponse struct {
 func PublishArchive(archiveFileName string, bucketName string, user string, config *aws.Config) (*PublishedArchiveResponse, error) {
   s3svc := s3.New(session.New(config))
   file, err := os.Open(archiveFileName)
-  if err != nil {return nil, fmt.Errorf("PublishArchive: Co´uldn't open archive file: %s: %s", archiveFileName, err)}
+  if err != nil {return nil, fmt.Errorf("PublishArchive: Couldn't open archive file: %s: %s", archiveFileName, err)}
   defer file.Close()
 
   fileInfo, err := file.Stat()
