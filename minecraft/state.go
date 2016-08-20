@@ -28,8 +28,23 @@ func init() {
   logging.SetLevel(logging.INFO, "craft-config/minecraft")
 }
 
+func ArchiveServer(rcon *Rcon, serverDirectory string, archiveFileName string) (err error) {
+  if err != nil {return err}
+  _, err = rcon.SaveAll()
+  if err != nil {return err}
+  _, err = rcon.SaveOff()
+  if err != nil {return err}
+  err = CreateServerArchive(serverDirectory, archiveFileName)
+  if err != nil { return err}
+  _, err = rcon.SaveOn()
+  if err != nil {
+    err = fmt.Errorf("ArchiveServer: server archived, problem turning auto-save back on: %s", err)
+  }
+  return err
+}
+
 // Make a zipfile of the server directory in directoryName.
-func ArchiveServer(directoryName, zipfileName string) (err error) {
+func CreateServerArchive(directoryName, zipfileName string) (err error) {
 
   log.Debugf("ArchiveServer: going to archive %s to %s\n", directoryName, zipfileName)
   zipFile, err := os.Create(zipfileName)

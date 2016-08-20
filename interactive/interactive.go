@@ -62,12 +62,17 @@ var (
   // event Watcher control.
   watchDone chan bool
   watcher *fsnotify.Watcher
+
+  rcon *minecraft.Rcon
 )
 
 func init() {
   logging.SetLevel(logging.INFO, "craft-config/interactive")
 
   watchDone = make(chan bool)
+  var err error
+  rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
+  if err != nil {log.Infof("Rcon creation failed: %s", err)}
 
   app = kingpin.New("", "Interactive mode.").Terminate(func(int){})
 
@@ -132,7 +137,7 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
       case printServerConfigCmd.FullCommand(): err = doPrintServerConfig()
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
-      case archiveServerCmd.FullCommand(): err = doArchiveServer()
+      case archiveServerCmd.FullCommand(): err = doArchiveServer(rcon)
       case archivePublishCmd.FullCommand(): err = doPublishArchive(awsConfig)
       case watchEventsStartCmd.FullCommand(): err = doWatchEventsStart()
       case watchEventsStopCmd.FullCommand(): err = doWatchEventsStop()
@@ -165,8 +170,8 @@ func doSetServerConfigValue() (error) {
   return nil
 }
 
-func doArchiveServer() (error) {
-  err := minecraft.ArchiveServer(serverDirectoryNameArg, archiveFileNameArg)
+func doArchiveServer(rcon *minecraft.Rcon) (error) {
+  err := minecraft.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
   return err
 }
 
