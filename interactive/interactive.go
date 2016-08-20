@@ -6,6 +6,8 @@ import (
   "strings"
   "fmt"
   "io"
+  "os"
+  "path/filepath"
   "craft-config/minecraft"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/op/go-logging"
@@ -189,8 +191,18 @@ func doWatchEventsStart() (err error) {
       select {
       case event := <-watcher.Events:
         log.Infof("file watch event: %s", event)
-        if event.Op & fsnotify.Write == fsnotify.Write {
-          log.Infof("modified file: %s", event.Name)
+        // if event.Op & fsnotify.Write == fsnotify.Write {
+        //   log.Infof("modified file: %s", event.Name)
+        // }
+        if event.Op & fsnotify.Create == fsnotify.Create { // If we add a dir, watch it.
+          file, err := os.Open(event.Name)
+          if err != nil {log.Errorf("Can't open new file %s: %s", event.Name, err)}
+          fInfo, err := file.Stat()
+          if err != nil {log.Errorf("Can't state new file %s: %s", event.Name, err)}
+          if fInfo.IsDir() {
+            log.Infof("Adding director %s to watch.", event.Name)
+            watcher.Add(event.Name)
+          }
         }
       case err := <-watcher.Errors:
         log.Infof("error: %s", err)
@@ -201,18 +213,26 @@ func doWatchEventsStart() (err error) {
     }
   }()
 
-  err = watcher.Add(".")
+  watchFileName := "."
+  err = filepath.Walk(watchFileName, func(path string, info os.FileInfo, err error) (error) {
+    if err != nil { return err }
+    if info.IsDir() {
+      log.Infof("Adding %s to watch list.", path)
+      err = watcher.Add(path)
+    }
+    return err
+  })
   return err
 }
 
 func doWatchEventsStop() (error) {
   if watcher == nil { return fmt.Errorf("No watcher to stop.")}
-  log.Info("Shutting done the file watcher.")
+  log.Debugf("Shutting done the file watcher.")
   watchDone <- true
-  log.Info("Closing the watcher.")
+  log.Debugf("Closing the watcher.")
   watcher.Close()
   watcher = nil
-  fmt.Printf("Stopping file watch.\n")
+  fmt.Printf("File watch stopped.\n")
   return nil
 }
 
