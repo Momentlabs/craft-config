@@ -12,7 +12,6 @@ import (
   "github.com/aws/aws-sdk-go/aws"
   "github.com/op/go-logging"
   "github.com/fsnotify/fsnotify"
-
 )
 
 var (
@@ -60,7 +59,7 @@ var (
 
   log = logging.MustGetLogger("craft-config/minecraft")
 
-  // watchDone bool
+  // event Watcher control.
   watchDone chan bool
   watcher *fsnotify.Watcher
 )
@@ -70,7 +69,7 @@ func init() {
 
   watchDone = make(chan bool)
 
-  app = kingpin.New("", "Interactive mode.").Terminate(doTerminate)
+  app = kingpin.New("", "Interactive mode.").Terminate(func(int){})
 
   // state
   verboseCmd = app.Command("verbose", "toggle verbose mode.")
@@ -179,6 +178,9 @@ func doPublishArchive(awsConfig *aws.Config) (error) {
   return err
 }
 
+
+// TODO: Either add a .craftignore file
+// or at least don't look at .git.
 func doWatchEventsStart() (err error) {
   if watcher != nil { return fmt.Errorf("Watcher already being used.") }
 
@@ -190,10 +192,7 @@ func doWatchEventsStart() (err error) {
     for {
       select {
       case event := <-watcher.Events:
-        log.Infof("file watch event: %s", event)
-        // if event.Op & fsnotify.Write == fsnotify.Write {
-        //   log.Infof("modified file: %s", event.Name)
-        // }
+        log.Infof("%s", event)
         if event.Op & fsnotify.Create == fsnotify.Create { // If we add a dir, watch it.
           file, err := os.Open(event.Name)
           if err != nil {log.Errorf("Can't open new file %s: %s", event.Name, err)}
@@ -256,8 +255,6 @@ func doVerbose() (error) {
 func doQuit() (error) {
   return io.EOF
 }
-
-func doTerminate(i int) {}
 
 func promptLoop(prompt string, process func(string) (error)) (err error) {
   errStr := "Error - %s.\n"
