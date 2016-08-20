@@ -9,6 +9,8 @@ import (
   "craft-config/minecraft"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/op/go-logging"
+  "github.com/fsnotify/fsnotify"
+
 )
 
 var (
@@ -48,9 +50,24 @@ var (
   bucketNameArg string
   userNameArg string
 
+  // Watch file-system.
+  watchCmd *kingpin.CmdClause
+  watchEventsCmd *kingpin.CmdClause
+  watchEventsStartCmd *kingpin.CmdClause
+  watchEventsStopCmd *kingpin.CmdClause
+
+  log = logging.MustGetLogger("craft-config/minecraft")
+
+  // watchDone bool
+  watchDone chan bool
+  watcher *fsnotify.Watcher
 )
 
 func init() {
+  logging.SetLevel(logging.INFO, "craft-config/interactive")
+
+  watchDone = make(chan bool)
+
   app = kingpin.New("", "Interactive mode.").Terminate(doTerminate)
 
   // state
@@ -79,6 +96,12 @@ func init() {
   archivePublishCmd.Arg("user", "User of archive.").Required().StringVar(&userNameArg)
   archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default("server.zip").StringVar(&archiveFileNameArg)
   archivePublishCmd.Arg("s3-bucket", "Name of S3 bucket to publish archive to.").Default("craft-config-test").StringVar(&bucketNameArg)
+
+  watchCmd = app.Command("watch", "Watch the file system.")
+  watchEventsCmd = watchCmd.Command("events", "Print out events.")
+  watchEventsStartCmd = watchEventsCmd.Command("start", "Start watching events.")
+  watchEventsStopCmd = watchEventsCmd.Command("stop", "Stop watching events.")
+
 }
 
 
@@ -110,6 +133,8 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
       case archiveServerCmd.FullCommand(): err = doArchiveServer()
       case archivePublishCmd.FullCommand(): err = doPublishArchive(awsConfig)
+      case watchEventsStartCmd.FullCommand(): err = doWatchEventsStart()
+      case watchEventsStopCmd.FullCommand(): err = doWatchEventsStop()
     }
   }
   return err
@@ -150,6 +175,45 @@ func doPublishArchive(awsConfig *aws.Config) (error) {
     fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
   }
   return err
+}
+
+func doWatchEventsStart() (err error) {
+  if watcher != nil { return fmt.Errorf("Watcher already being used.") }
+
+  watcher, err = fsnotify.NewWatcher()
+  if err != nil { return fmt.Errorf("Couldn't create a notifycation watcher: %s", err) }
+
+  go func() {
+    log.Info("Starting file watch.")
+    for {
+      select {
+      case event := <-watcher.Events:
+        log.Infof("file watch event: %s", event)
+        if event.Op & fsnotify.Write == fsnotify.Write {
+          log.Infof("modified file: %s", event.Name)
+        }
+      case err := <-watcher.Errors:
+        log.Infof("error: %s", err)
+      case <-watchDone:
+        log.Infof("Stopping file watch.")
+        return
+      } 
+    }
+  }()
+
+  err = watcher.Add(".")
+  return err
+}
+
+func doWatchEventsStop() (error) {
+  if watcher == nil { return fmt.Errorf("No watcher to stop.")}
+  log.Info("Shutting done the file watcher.")
+  watchDone <- true
+  log.Info("Closing the watcher.")
+  watcher.Close()
+  watcher = nil
+  fmt.Printf("Stopping file watch.\n")
+  return nil
 }
 
 // Interactive Mode support functions.
