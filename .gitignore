@@ -1,0 +1,6 @@
+node_modules/
+*.cfg
+*.zip
+*.gz
+*.tar
+Vagrantfile
