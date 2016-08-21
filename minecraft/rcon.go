@@ -11,7 +11,6 @@ import(
   // "archive/zip"
   // "path/filepath"
   "github.com/bearbin/mcgorcon"
-  // "github.com/op/go-logging"
   )
 
 type Rcon struct {
@@ -55,5 +54,4 @@ func (rc *Rcon) SaveOff() (reply string, err error) {
 func (rc *Rcon) SaveAll() (reply string, err error) {
   return rc.Send("save-all")
 }
-
 
