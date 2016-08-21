@@ -45,6 +45,8 @@ var (
 
 func init() {
   log = logging.MustGetLogger("craft-config")
+  keyValueMap = make(map[string]string)
+
 
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
@@ -77,8 +79,6 @@ func init() {
 
 func main() {
 
-  keyValueMap = make(map[string]string)
-  // Parse the command line to fool with flags and get the command we'll execeute.
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
   setLogLevel(logging.INFO)
   if verbose {
@@ -105,6 +105,11 @@ func main() {
     commandMap[command]()
   }
 }
+
+
+//
+// Command Implementations
+//
 
 func doListServerConfig() {
   serverConfig := minecraft.NewConfigFromFile(serverConfigFileName)
@@ -139,6 +144,7 @@ func doArchiveAndPublish() {
     if count > 10 { break }
     time.Sleep(waitTime)
   }
+
   if rcon == nil {
     log.Info("Failed to create an Rcon to the server. Can't archive.")
     return
@@ -164,7 +170,7 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
     if users > 0 {
       archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
     } else {
-      log.Info("No users on server. Not updating the archive.")
+      log.Info("No users on server. Not updating the archive. Checking again in %s.", delayTime )
     }
     time.Sleep(delayTime)
   }
