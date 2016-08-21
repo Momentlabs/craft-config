@@ -33,7 +33,7 @@ func ArchiveAndPublish(rcon *Rcon, serverDirectory string, bucketName string, us
   archivePath := filepath.Join(archiveDir, archiveFileName)
   err = ArchiveServer(rcon, serverDirectory, archivePath)
   if err != nil { return nil, err }
-  resp, err = PublishArchive(archiveFileName, bucketName, user, config)
+  resp, err = PublishArchive(archivePath, bucketName, user, config)
   return resp, err
 }
 
@@ -43,9 +43,9 @@ func ArchiveServer(rcon *Rcon, serverDirectory string, archiveFileName string) (
   _, err = rcon.SaveOff()
   if err != nil {return err}
   err = CreateServerArchive(serverDirectory, archiveFileName)
+  _, newErr := rcon.SaveOn()
   if err != nil { return err}
-  _, err = rcon.SaveOn()
-  if err != nil {
+  if newErr != nil {
     err = fmt.Errorf("ArchiveServer: server archived, problem turning auto-save back on: %s", err)
   }
   return err
@@ -150,7 +150,7 @@ type PublishedArchiveResponse struct {
 func PublishArchive(archiveFileName string, bucketName string, user string, config *aws.Config) (*PublishedArchiveResponse, error) {
   s3svc := s3.New(session.New(config))
   file, err := os.Open(archiveFileName)
-  if err != nil {return nil, fmt.Errorf("PublishArchive: Couldn't open archive file: %s: %s", archiveFileName, err)}
+  if err != nil {return nil, fmt.Errorf("PublishArchive: Couldn't open archive file: %s", err)}
   defer file.Close()
 
   fileInfo, err := file.Stat()
