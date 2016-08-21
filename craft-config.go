@@ -17,6 +17,7 @@ var (
   verbose                           bool
   debug                             bool
   region                            string
+  awsConfigFileArg                  string
 
   // Prompt for Commands
   interactiveCmd                       *kingpin.CmdClause
@@ -33,6 +34,7 @@ var (
   bucketNameArg                     string
   archiveDirectoryArg               string
 
+
   log                               *logging.Logger
   awsConfig                         *aws.Config
 
@@ -46,6 +48,7 @@ func init() {
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
   app.Flag("debug", "Set logging level to debug: lots of logging.").BoolVar(&debug)
+  app.Flag("aws-config", "Configuration file location.").StringVar(&awsConfigFileArg)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
@@ -80,7 +83,7 @@ func main() {
     setLogLevel(logging.DEBUG)
   }
 
-  awsConfig = awslib.GetConfig("minecraft")
+  awsConfig = awslib.GetConfig("minecraft", awsConfigFileArg)
   fmt.Printf("%s\n", awslib.AccountDetailsString(awsConfig))
 
   // List of commands as parsed matched against functions to execute the commands.
