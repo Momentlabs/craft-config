@@ -33,17 +33,19 @@ var (
   bucketNameArg                     string
   archiveDirectoryArg               string
 
-  log = logging.MustGetLogger("craft-config")
+  log                               *logging.Logger
   awsConfig                         *aws.Config
 
 )
 
+
 func init() {
+  log = logging.MustGetLogger("craft-config")
   logging.SetLevel(logging.INFO, "craft-config")
 
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
-  app.Flag("verbose", "Describe what is happening, as it happens.").Short('v').BoolVar(&verbose)
-  app.Flag("debug", "Set logging level to debug: lots of loggin.").Short('d').BoolVar(&debug)
+  app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
+  app.Flag("debug", "Set logging level to debug: lots of logging.").BoolVar(&debug)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
@@ -62,7 +64,7 @@ func init() {
   archiveAndPublishCmd.Arg("bucket name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
   archiveAndPublishCmd.Arg("archive directory","to archive.a").Default(".").StringVar(&archiveDirectoryArg)
 
-  kingpin.CommandLine.Help = `A command-line minecraft config tool.`
+  kingpin.CommandLine.Help = "A command-line minecraft config tool."
 }
 
 func main() {
@@ -70,9 +72,9 @@ func main() {
   keyValueMap = make(map[string]string)
   // Parse the command line to fool with flags and get the command we'll execeute.
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
-  setLogLevel(logging.WARNING)
+  setLogLevel(logging.INFO)
   if verbose {
-    setLogLevel(logging.INFO)
+    setLogLevel(logging.DEBUG)
   }
   if debug {
     setLogLevel(logging.DEBUG)
@@ -120,14 +122,16 @@ func doArchiveAndPublish() {
   resp, err := minecraft.ArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
   if err != nil {
     log.Errorf("Error creating an archive and publishing to S3: %s", err)
+  } else {
+    log.Infof("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
   }
-  log.Infof("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
 }
 
 func setLogLevel(level logging.Level) {
   logs := []string{"craft-config", "craft-config/interactive", "craft-config/minecraft"}
-  for _, log := range logs {
-    logging.SetLevel(level, log)
+  for _, logName := range logs {
+    log.Infof("Setting log \"%s\" to %s\n", logName, level)
+    logging.SetLevel(level, logName)
   }
 }
 
