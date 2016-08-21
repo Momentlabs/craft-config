@@ -44,7 +44,6 @@ var (
 
 func init() {
   log = logging.MustGetLogger("craft-config")
-  logging.SetLevel(logging.INFO, "craft-config")
 
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
@@ -122,13 +121,12 @@ func doModifyServerConfig() {
 }
 
 func doArchiveAndPublish() {
-
   var rcon *minecraft.Rcon
   var err error
   waitTime := 5 * time.Second
   count := 0
   for rcon == nil {
-    rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
+    rcon, err = minecraft.NewRcon("192.168.99.100", "25575", "testing")
     count++
     if err != nil { 
       log.Infof("Rcon creation failed: %s. Sleeping for %s.", err, waitTime)
@@ -141,7 +139,7 @@ func doArchiveAndPublish() {
     log.Info("Failed to create an Rcon to the server. Can't archive.")
     return
   } else {
-    log.Info("Connected to server.")
+    log.Info("RCON Connected to server.")
   }
 
   if continuousArchiveArg {
@@ -152,6 +150,7 @@ func doArchiveAndPublish() {
 }
 
 func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+  delayTime := 5 * time.Minute
   for {
     users, err := rcon.NumberOfUsers()
     if err != nil { 
@@ -160,8 +159,10 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
     } 
     if users > 0 {
       archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+    } else {
+      log.Info("No users on server. Not updating the archive.")
     }
-    time.Sleep(1 * time.Minute)
+    time.Sleep(delayTime)
   }
 }
 

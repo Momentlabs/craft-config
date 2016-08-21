@@ -68,12 +68,7 @@ var (
 
 func init() {
   logging.SetLevel(logging.INFO, "craft-config/interactive")
-
   watchDone = make(chan bool)
-
-  var err error
-  rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
-  if err != nil {log.Infof("Rcon creation failed: %s", err)}
 
   app = kingpin.New("", "Interactive mode.").Terminate(func(int){})
 
@@ -116,6 +111,9 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
 
   // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
   testString = []string{}
+
+  rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
+
 
   // Prepare a line for parsing
   line = strings.TrimRight(line, "\n")
