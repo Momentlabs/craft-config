@@ -4,7 +4,7 @@ import (
   "fmt"
   "gopkg.in/alecthomas/kingpin.v2"
   "os"
-  // "log"
+  "time"
   "ecs-pilot/awslib"
   "craft-config/interactive"
   "craft-config/minecraft"
@@ -33,6 +33,7 @@ var (
   userArg                           string
   bucketNameArg                     string
   archiveDirectoryArg               string
+  continuousArchiveArg              bool
 
 
   log                               *logging.Logger
@@ -63,6 +64,7 @@ func init() {
   modifyServerConfig.Flag("dest-file", "Modified file to write. If not then new config goes to stdout.").Required().Short('d').StringVar(&newServerConfigFileName)
 
   archiveAndPublishCmd = app.Command("archive", "Archive a server and Publish archive to S3.")  
+  archiveAndPublishCmd.Flag("continuous", "Continously archive and publish, when users are logged into the server.").BoolVar(&continuousArchiveArg)
   archiveAndPublishCmd.Arg("user", "Name of user for archive publishing.").Required().StringVar(&userArg)
   archiveAndPublishCmd.Arg("bucket name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
   archiveAndPublishCmd.Arg("archive directory","to archive.a").Default(".").StringVar(&archiveDirectoryArg)
@@ -121,8 +123,33 @@ func doModifyServerConfig() {
 
 func doArchiveAndPublish() {
   rcon, err := minecraft.NewRcon("127.0.0.1", "25575", "testing")
-  if err != nil { log.Infof("Rcon creation failed: %s", err) }
-  resp, err := minecraft.ArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+  if err != nil { 
+    log.Infof("Rcon creation failed: %s", err) 
+    return
+  }
+  if continuousArchiveArg {
+    continuousArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+  } else {
+   archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+  }
+}
+
+func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+  for {
+    users, err := rcon.NumberOfUsers()
+    if err != nil { 
+      log.Errorf("Can't get the numbers of users from the server. %s", err)
+      return
+    } 
+    if users > 0 {
+      archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+    }
+    time.Sleep(1 * time.Minute)
+  }
+}
+
+func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+  resp, err := minecraft.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
   if err != nil {
     log.Errorf("Error creating an archive and publishing to S3: %s", err)
   } else {

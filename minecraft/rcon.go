@@ -4,6 +4,7 @@ import(
   "fmt"
   // "io"
   // "net/http"
+  "regexp"
   "strconv"
   // "os"
   // "strings"
@@ -29,9 +30,10 @@ func NewRcon(host string, port string, pw string) (rcon *Rcon, err error) {
       Port: p,
       Password: pw,
     }
-    client, err := mcgorcon.Dial(rcon.Host, rcon.Port, rcon.Password)
-    log.Debugf("NewRcon: connected to server %s:%d", rcon.Host, rcon.Port)
+    var client mcgorcon.Client
+    client, err = mcgorcon.Dial(rcon.Host, rcon.Port, rcon.Password)
     if err == nil {
+      log.Debugf("NewRcon: connected to server %s:%d", rcon.Host, rcon.Port)
       rcon.Client = &client
     }
   }
@@ -53,5 +55,28 @@ func (rc *Rcon) SaveOff() (reply string, err error) {
 
 func (rc *Rcon) SaveAll() (reply string, err error) {
   return rc.Send("save-all")
+}
+
+func (rc *Rcon)List() (reply string, err error) {
+  return rc.Send("list")
+}
+
+func (rc *Rcon)NumberOfUsers() (nu int, err error) {
+  exp := "There are (\\d+)/\\d+.*"
+  re := regexp.MustCompile(exp)
+  reply, err := rc.List()
+  if err == nil {
+    matches := re.FindStringSubmatch(reply)
+    if len(matches) < 2 {
+      err = fmt.Errorf("Rcon: couldn't find number of users. Regex: \"%s\" Reply: \"%s\"", exp, reply)
+    } else {
+      nu, err = strconv.Atoi(matches[1])
+      if err != nil { 
+        err = fmt.Errorf("Rcon: failed to get users from Regex: \"%s\" Reply: \"%s\", Match: \"%s\"", 
+          exp, reply, matches[1]) 
+      }
+    }
+  }
+  return nu, err
 }
 
