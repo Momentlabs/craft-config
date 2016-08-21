@@ -122,15 +122,32 @@ func doModifyServerConfig() {
 }
 
 func doArchiveAndPublish() {
-  rcon, err := minecraft.NewRcon("127.0.0.1", "25575", "testing")
-  if err != nil { 
-    log.Infof("Rcon creation failed: %s", err) 
-    return
+
+  var rcon *minecraft.Rcon
+  var err error
+  waitTime := 5 * time.Second
+  count := 0
+  for rcon == nil {
+    rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
+    count++
+    if err != nil { 
+      log.Infof("Rcon creation failed: %s. Sleeping for %s.", err, waitTime)
+      rcon = nil
+    }
+    if count > 10 { break }
+    time.Sleep(waitTime)
   }
+  if rcon == nil {
+    log.Info("Failed to create an Rcon to the server. Can't archive.")
+    return
+  } else {
+    log.Info("Connected to server.")
+  }
+
   if continuousArchiveArg {
     continuousArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
   } else {
-   archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+    archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
   }
 }
 
