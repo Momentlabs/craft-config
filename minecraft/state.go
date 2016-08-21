@@ -14,8 +14,6 @@ import(
   "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/aws/aws-sdk-go/service/s3"
-  // "github.com/rlmcpherson/s3gof3r"
-  // "golang.org/x/exp/inotify"
 )
 
 
@@ -28,8 +26,18 @@ func init() {
   logging.SetLevel(logging.INFO, "craft-config/minecraft")
 }
 
+// Create a server archive and then publish to S3.
+func ArchiveAndPublish(rcon *Rcon, serverDirectory string, bucketName string, user string, config *aws.Config) (resp *PublishedArchiveResponse, err error) {
+  archiveDir := os.TempDir()
+  archiveFileName := fmt.Sprintf("server-%s.zip", time.Now())
+  archivePath := filepath.Join(archiveDir, archiveFileName)
+  err = ArchiveServer(rcon, serverDirectory, archivePath)
+  if err != nil { return nil, err }
+  resp, err = PublishArchive(archiveFileName, bucketName, user, config)
+  return resp, err
+}
+
 func ArchiveServer(rcon *Rcon, serverDirectory string, archiveFileName string) (err error) {
-  if err != nil {return err}
   _, err = rcon.SaveAll()
   if err != nil {return err}
   _, err = rcon.SaveOff()
