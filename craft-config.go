@@ -170,7 +170,7 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
     if users > 0 {
       archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
     } else {
-      log.Info("No users on server. Not updating the archive. Checking again in %s.", delayTime )
+      log.Infof("No users on server. Not updating the archive. Checking again in %s.", delayTime )
     }
     time.Sleep(delayTime)
   }
