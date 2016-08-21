@@ -31,7 +31,7 @@ var (
   archiveAndPublishCmd              *kingpin.CmdClause
   userArg                           string
   bucketNameArg                     string
-  serverDirectoryArg                string
+  archiveDirectoryArg               string
 
   log = logging.MustGetLogger("craft-config")
   awsConfig                         *aws.Config
@@ -58,6 +58,9 @@ func init() {
   modifyServerConfig.Flag("dest-file", "Modified file to write. If not then new config goes to stdout.").Required().Short('d').StringVar(&newServerConfigFileName)
 
   archiveAndPublishCmd = app.Command("archive", "Archive a server and Publish archive to S3.")  
+  archiveAndPublishCmd.Arg("user", "Name of user for archive publishing.").Required().StringVar(&userArg)
+  archiveAndPublishCmd.Arg("bucket name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
+  archiveAndPublishCmd.Arg("archive directory","to archive.a").Default(".").StringVar(&archiveDirectoryArg)
 
   kingpin.CommandLine.Help = `A command-line minecraft config tool.`
 }
@@ -114,7 +117,7 @@ func doModifyServerConfig() {
 func doArchiveAndPublish() {
   rcon, err := minecraft.NewRcon("127.0.0.1", "25575", "testing")
   if err != nil { log.Infof("Rcon creation failed: %s", err) }
-  resp, err := minecraft.ArchiveAndPublish(rcon, serverDirectoryArg, bucketNameArg, userArg, awsConfig)
+  resp, err := minecraft.ArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
   if err != nil {
     log.Errorf("Error creating an archive and publishing to S3: %s", err)
   }
