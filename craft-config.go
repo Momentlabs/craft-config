@@ -34,11 +34,12 @@ var (
   bucketNameArg                     string
   archiveDirectoryArg               string
   continuousArchiveArg              bool
-
+  serverIpArg                       string
+  rconPortArg                       string
+  rconPassword                      string
 
   log                               *logging.Logger
   awsConfig                         *aws.Config
-
 )
 
 
@@ -64,6 +65,9 @@ func init() {
 
   archiveAndPublishCmd = app.Command("archive", "Archive a server and Publish archive to S3.")  
   archiveAndPublishCmd.Flag("continuous", "Continously archive and publish, when users are logged into the server.").BoolVar(&continuousArchiveArg)
+  archiveAndPublishCmd.Flag("server-ip", "IP address for the rcon server connection.").Default("127.0.0.1").StringVar(&serverIpArg)
+  archiveAndPublishCmd.Flag("rcon-port", "Port for rcon server connection.").Default("25575").StringVar(&rconPortArg)
+  archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPassword)
   archiveAndPublishCmd.Arg("user", "Name of user for archive publishing.").Required().StringVar(&userArg)
   archiveAndPublishCmd.Arg("bucket name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
   archiveAndPublishCmd.Arg("archive directory","to archive.a").Default(".").StringVar(&archiveDirectoryArg)
@@ -126,7 +130,7 @@ func doArchiveAndPublish() {
   waitTime := 5 * time.Second
   count := 0
   for rcon == nil {
-    rcon, err = minecraft.NewRcon("192.168.99.100", "25575", "testing")
+    rcon, err = minecraft.NewRcon(serverIpArg, rconPortArg, rconPassword)
     count++
     if err != nil { 
       log.Infof("Rcon creation failed: %s. Sleeping for %s.", err, waitTime)
