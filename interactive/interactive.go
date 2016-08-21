@@ -70,6 +70,7 @@ func init() {
   logging.SetLevel(logging.INFO, "craft-config/interactive")
 
   watchDone = make(chan bool)
+
   var err error
   rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
   if err != nil {log.Infof("Rcon creation failed: %s", err)}
@@ -216,13 +217,18 @@ func doWatchEventsStart() (err error) {
       } 
     }
   }()
+  addWatchTree(".", watcher)
+  return err
+}
 
+// add the directories starting at the base to a watcher.
+func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
   watchFileName := "."
   err = filepath.Walk(watchFileName, func(path string, info os.FileInfo, err error) (error) {
     if err != nil { return err }
     if info.IsDir() {
       log.Infof("Adding %s to watch list.", path)
-      err = watcher.Add(path)
+      err = w.Add(path)
     }
     return err
   })
@@ -284,9 +290,10 @@ func promptLoop(prompt string, process func(string) (error)) (err error) {
 
 // This gets called from the main program, presumably from the 'interactive' command on main's command line.
 func DoInteractive(awsConfig *aws.Config) {
-  xICommand := func(line string) (err error) {return doICommand(line, awsConfig)}
   prompt := "> "
-  err := promptLoop(prompt, xICommand)
+  err := promptLoop(prompt, func(line string) (err error) {
+    return doICommand(line, awsConfig)
+  })
   if err != nil {fmt.Printf("Error - %s.\n", err)}
 }
 
