@@ -8,11 +8,8 @@ import (
   "ecs-pilot/awslib"
   "craft-config/interactive"
   "craft-config/minecraft"
-  "github.com/apex/log"
-  "github.com/apex/log/handlers/text"
-  // "github.com/apex/log/handlers/json"
   "github.com/aws/aws-sdk-go/aws"
-  "github.com/op/go-logging"
+  "github.com/Sirupsen/logrus"
 )
 
 var (
@@ -37,20 +34,20 @@ var (
   bucketNameArg                     string
   archiveDirectoryArg               string
   continuousArchiveArg              bool
+  useRconArg                        bool
+  publishArchiveArg                 bool
   serverIpArg                       string
   rconPortArg                       string
   rconPassword                      string
 
-  // log                               *logging.Logger
+  log = logrus.New()
   awsConfig                         *aws.Config
 )
 
 
 func init() {
-  // log = logging.MustGetLogger("craft-config")
-  log.SetHandler(text.New(os.Stderr))
-  keyValueMap = make(map[string]string)
 
+  keyValueMap = make(map[string]string)
 
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
@@ -72,6 +69,8 @@ func init() {
   archiveAndPublishCmd = app.Command("archive", "Archive a server and Publish archive to S3.")  
   archiveAndPublishCmd.Flag("continuous", "Continously archive and publish, when users are logged into the server.").BoolVar(&continuousArchiveArg)
   archiveAndPublishCmd.Flag("server-ip", "IP address for the rcon server connection.").Default("127.0.0.1").StringVar(&serverIpArg)
+  archiveAndPublishCmd.Flag("noPublish", "Don't publish the archive to S3, just create it.").Default("true").BoolVar(&publishArchiveArg)
+  archiveAndPublishCmd.Flag("noRcon", "Don't try to use the RCON connection on the server to start/stop saving.  UNSAFE").Default("true").BoolVar(&useRconArg)
   archiveAndPublishCmd.Flag("rcon-port", "Port for rcon server connection.").Default("25575").StringVar(&rconPortArg)
   archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPassword)
   archiveAndPublishCmd.Arg("user", "Name of user for archive publishing.").Required().StringVar(&userArg)
@@ -82,18 +81,17 @@ func init() {
 }
 
 func main() {
+  configureLogs()
 
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
-  setLogLevel(logging.INFO)
-  if verbose {
-    setLogLevel(logging.DEBUG)
-  }
-  if debug {
-    setLogLevel(logging.DEBUG)
-  }
+  updateLogLevel()
 
   awsConfig = awslib.GetConfig("minecraft", awsConfigFileArg)
-  fmt.Printf("%s\n", awslib.AccountDetailsString(awsConfig))
+  region = *awsConfig.Region
+  accountAliases, err := awslib.GetAccountAliases(awsConfig)
+  if err == nil {
+    log.Debug(logrus.Fields{"account": accountAliases, "region": region}, "craft-config startup.")
+  }
 
   // List of commands as parsed matched against functions to execute the commands.
   commandMap := map[string]func() {
@@ -128,32 +126,27 @@ func doModifyServerConfig() {
       serverConfig.SetEntry(k,v)
       serverConfig.WriteToFile(newServerConfigFileName)
     } else {
-      log.Fatalf("Key \"%s\" not found in configuration \"%s\". No files updated.\n",k,serverConfigFileName)
+      log.WithFields(logrus.Fields{
+        "key": k,
+        "config-file": serverConfigFileName,
+      }).Fatalf("Key \"%s\" not found in configuration \"%s\". No files updated.\n",k,serverConfigFileName)
     }
   }
 }
 
 func doArchiveAndPublish() {
-  var rcon *minecraft.Rcon
-  var err error
-  waitTime := 5 * time.Second
-  count := 0
-  for rcon == nil {
-    rcon, err = minecraft.NewRcon(serverIpArg, rconPortArg, rconPassword)
-    count++
-    if err != nil { 
-      log.Infof("Rcon creation failed: %s. Sleeping for %s.", err, waitTime)
-      rcon = nil
-    }
-    if count > 10 { break }
-    time.Sleep(waitTime)
-  }
 
-  if rcon == nil {
-    log.Info("Failed to create an Rcon to the server. Can't archive.")
+  retries := 10
+  waitTime := 5 * time.Second
+  rcon, err := minecraft.NewRconWithRetry(serverIpArg, rconPortArg, rconPassword, retries, waitTime)
+  server := serverIpArg + ":" + rconPortArg
+  if err != nil {
+    log.WithFields(logrus.Fields{
+      "server": server, 
+      "retries": retries, 
+      "retryWait": waitTime,
+    }).Error("RCON Connection failed. Can't archive")
     return
-  } else {
-    log.Info("RCON Connected to server.")
   }
 
   if continuousArchiveArg {
@@ -163,6 +156,13 @@ func doArchiveAndPublish() {
   }
 }
 
+// TODO: Set up some asynchronous go routines:
+// 1. Delay timer: every 5 mniutes or so, come along and do a backup if there are users (what we have now).
+// 2. File Watcher: check to see if non-world files have been created and update those.
+// 3. User Watcher: assuming the file watcher, can't proxy for this. Set a timeout for every 10 seconds and check for new users,
+// update when one shows up.
+//
+// Finally  Put the whole thing in a go-routine that checks for a stop (see the watcher in ineteractive.)
 func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
   delayTime := 5 * time.Minute
   for {
@@ -181,19 +181,29 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
 }
 
 func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+  archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
   resp, err := minecraft.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
   if err != nil {
-    log.Errorf("Error creating an archive and publishing to S3: %s", err)
+    log.WithFields(archiveFields).WithError(err).Errorf("Error creating an archive and publishing to S3")
   } else {
-    log.Infof("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
+    archiveFields["bucket"] = resp.BucketName
+    archiveFields["archive"] = resp.StoredPath
+    log.WithFields(archiveFields).Infof("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
   }
 }
+func configureLogs() {
+  f := new(minecraft.TextFormatter)
+  f.FullTimestamp = true
+  log.Formatter = f
+  log.Level = logrus.InfoLevel
+}
 
-func setLogLevel(level logging.Level) {
-  logs := []string{"craft-config/interactive", "craft-config/minecraft"}
-  for _, logName := range logs {
-    log.Infof("Setting log \"%s\" to %s\n", logName, level)
-    logging.SetLevel(level, logName)
+func updateLogLevel() {
+  l := logrus.InfoLevel
+  if debug || verbose {
+    l = logrus.DebugLevel
   }
+  log.Level = l
+  minecraft.SetLogLevel(l)
 }
 

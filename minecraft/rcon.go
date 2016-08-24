@@ -2,15 +2,9 @@ package minecraft
 
 import(
   "fmt"
-  // "io"
-  // "net/http"
   "regexp"
   "strconv"
-  // "os"
-  // "strings"
-  // "time"
-  // "archive/zip"
-  // "path/filepath"
+  "time"
   "github.com/bearbin/mcgorcon"
   "github.com/Sirupsen/logrus"
   )
@@ -35,11 +29,43 @@ func NewRcon(host string, port string, pw string) (rcon *Rcon, err error) {
     var client mcgorcon.Client
     client, err = mcgorcon.Dial(rcon.Host, rcon.Port, rcon.Password)
     if err == nil {
-      log.WithFields(logrus.Fields{"server": rcon.Host, "port": rcon.Port,}).Debug("NewRcon: connected to server")
+      log.Debug(logrus.Fields{"server": rcon.Host, "port": rcon.Port,},"NewRcon: connected to server")
       rcon.Client = &client
     }
   }
   return  rcon, err
+}
+
+// Create a new connection, retry retries times, waiting retryWait between. 
+// This blocks until either a connection is made or until we've done this retryCount times.
+// This waits retryWait each time, no exponential back-off.
+func NewRconWithRetry(host, port, pw string, retries int, retryWait time.Duration ) (rcon *Rcon, err error) {
+
+  f := logrus.Fields{
+    "connection": host + ":" + port, 
+    "wait": retryWait, 
+    "count": 0,
+  }
+
+  retryCount := 0
+  for rcon == nil {
+    retryCount++
+    f["count"] = retryCount
+    rcon, err = NewRcon(host, port, pw)
+    if err != nil {
+      log.Info(f, "RCON Connection failed. Retrying.")
+      rcon = nil
+    }
+    if retryCount > retries { break }
+    time.Sleep(retryWait)
+  }
+  if  rcon == nil {
+    log.Info(f, "RCON Failed to create an RCON to the server.")
+  } else {
+    log.Info(f, "RCON Connected to server.")
+  }
+
+  return rcon, err
 }
 
 func (rc *Rcon) HasConnection() bool {

@@ -4,6 +4,7 @@ import (
   "fmt"
   "os"
   "github.com/go-ini/ini"
+  "github.com/Sirupsen/logrus"
 )
 
 func init() {
@@ -15,35 +16,34 @@ type ServerConfig struct {
 
 func defaultSection(config *ini.File) (*ini.Section) {
   section, err := config.GetSection("")
-  checkFatalError(err)
+  log.CheckFatalError(nil, "Couldn't get the default config Section", err)
   return section
 }
 
 func  NewConfigFromFile(fileName string) (*ServerConfig) {
   cfg, err := ini.Load(fileName)
-  checkFatalError(err)
-
+  log.CheckFatalError(logrus.Fields{"config": fileName,}, "Can't load config.", err)
   return &ServerConfig{Config: cfg}
 }
 
 func (cfg *ServerConfig) WriteToFile(filename string) {
   file, err := os.Create(filename)
-  checkFatalError(err)
+  defer file.Close()
 
+  log.CheckFatalError(logrus.Fields{"config": filename}, "Can't open new config file.", err)
   _, err = cfg.Config.WriteTo(file)
-  checkFatalError(err)
-
-  file.Close()
+  log.CheckFatalError(logrus.Fields{"config": filename}, "Can't write to config file.", err)
 }
 
 func (cfg *ServerConfig) SetEntry(key string, value string) {
+  f := logrus.Fields{"key": key, "value": value,}
   section  := defaultSection(cfg.Config)
   if section.HasKey(key) {
     entry, err := section.GetKey(key)
-    checkFatalError(err)
+    log.CheckFatalError(f, "HasKey() == true but GetKey failed.", err)
     entry.SetValue(value)
   } else {
-    log.Info("Key \"%s\" not present in config. Configuration unmodified.", key)
+    log.Info(f, "Key not prsent in config. Configuration unmodified.")
   }
 }
 

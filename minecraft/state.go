@@ -13,16 +13,16 @@ import(
   "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/aws/aws-sdk-go/service/s3"
-  // "github.com/op/go-logging"
   "github.com/Sirupsen/logrus"
 )
 
-
-// Create a server archive and then publish to S3.
 func ArchiveAndPublish(rcon *Rcon, serverDirectory string, bucketName string, user string, config *aws.Config) (resp *PublishedArchiveResponse, err error) {
   archiveDir := os.TempDir()
   archiveFileName := fmt.Sprintf("server-%s.zip", time.Now())
   archivePath := filepath.Join(archiveDir, archiveFileName)
+
+  log.Info(logrus.Fields{"user": user,"archiveDir": serverDirectory, "bucket": bucketName,}, "Creating Archive.")
+
   err = ArchiveServer(rcon, serverDirectory, archivePath)
   if err != nil { return nil, err }
   resp, err = PublishArchive(archivePath, bucketName, user, config)
@@ -42,14 +42,14 @@ func ArchiveServer(rcon *Rcon, serverDirectory string, archiveFileName string) (
   if rcErr != nil {
     err = fmt.Errorf("ArchiveServer: server archived, problem turning auto-save back on: %s", err)
   }
-  log.WithFields(logrus.Fields{"dir": serverDirectory, "archive": archiveFileName}).Info("Archived server.")
+  log.Info(logrus.Fields{"dir": serverDirectory, "archive": archiveFileName},"Archived server.")
   return err
 }
 
 // Make a zipfile of the server directory in directoryName.
 func CreateServerArchive(directoryName, zipfileName string) (err error) {
 
-  log.WithFields(logrus.Fields{"dir": directoryName, "archive": zipfileName,}).Debug("Archiving server.")
+  log.Debug(logrus.Fields{"dir": directoryName, "archive": zipfileName,}, "Archiving server.")
   zipFile, err := os.Create(zipfileName)
   if err != nil { return fmt.Errorf("CreateArchiveServer: can't open zipfile %s: %s", zipfileName, err) }
   defer zipFile.Close()
@@ -70,7 +70,7 @@ func CreateServerArchive(directoryName, zipfileName string) (err error) {
   if err != nil { return fmt.Errorf("CreativeArchiveServer: can't change to server directory %s: %s", directoryName, err) }
 
   fileNames := getServerFileNames()
-  log.WithFields(logrus.Fields{"length": len(fileNames),}).Debugf("Saving files to archive")
+  log.Debug(logrus.Fields{"length": len(fileNames),}, "Saving files to archive")
   for _, fileName := range fileNames {
     err = writeFileToZip("", fileName, archive)
     // err = writeFileToZip(directoryName, fileName, archive)
@@ -114,12 +114,12 @@ func writeFileToZip(baseDir, fileName string, archive *zip.Writer) (err error) {
       header.Method = zip.Deflate // Is this necessary?
     }
 
-    log.WithField("zip-header", header.Name).Debug("Writing Zip Header.")
+    log.Debug(logrus.Fields{"zip-header": header.Name,}, "Writing Zip Header.")
     writer, err := archive.CreateHeader(header)
     if err != nil { return fmt.Errorf("Couldn't write header to archive: %s", err)}
 
     if !info.IsDir() {
-        log.WithField("file", path).Debugf("Opening and copying file to archive")
+        log.Debug(logrus.Fields{"file": path,}, "Opening and copying file to archive")
         file, err := os.Open(path)
         if err != nil { fmt.Errorf("Couldn't open file %s: %s", path, err) }
         _, err = io.Copy(writer, file)
@@ -159,7 +159,12 @@ func PublishArchive(archiveFileName string, bucketName string, user string, conf
   fileBytes := bytes.NewReader(buffer)
 
   path := getArchiveName(user)
-  log.Debugf("PublishArchive: writing %s with %d bytes, type: %s to %s:%s", archiveFileName, fileSize, fileType, bucketName, path)
+  log.Debug(logrus.Fields{
+    "archiveFile": archiveFileName, 
+    "bytes": fileSize, 
+    "fileType": fileType, 
+    "bucket": bucketName, 
+    "archive": path}, "PublishArchive: Writing Archive.")
 
   // TOTO: Lookinto this and in particular figure out how to use an iamrole for this.
   aclString := "public-read"

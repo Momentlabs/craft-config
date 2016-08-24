@@ -10,13 +10,9 @@ import (
   "os"
   "path/filepath"
   "craft-config/minecraft"
-  // "github.com/apex/log"
-  // "github.com/apex/log/handlers/cli"
   "github.com/aws/aws-sdk-go/aws"
-  // "github.com/op/go-logging"
   "github.com/fsnotify/fsnotify"
   "github.com/Sirupsen/logrus"
-
 )
 
 var (
@@ -71,7 +67,6 @@ var (
   watchEventsStartCmd *kingpin.CmdClause
   watchEventsStopCmd *kingpin.CmdClause
 
-  // log = logging.MustGetLogger("craft-config/minecraft")
   log = logrus.New()
 
 
@@ -82,11 +77,8 @@ var (
 )
 
 func init() {
-  // log.SetHandler(cli.Default)
-  // log.SetLevel(log.InfoLevel)
-  // logging.SetLevel(logging.INFO, "craft-config/interactive")
-  log.Formatter = new(logrus.JSONFormatter)
-  log.Formatter = new(logrus.TextFormatter)
+  // log.Formatter = new(logrus.JSONFormatter)
+  log.Formatter = new(minecraft.TextFormatter)
   logrus.SetLevel(logrus.DebugLevel)
 
   watchDone = make(chan bool)
