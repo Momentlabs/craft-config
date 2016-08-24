@@ -9,6 +9,7 @@ import (
   "craft-config/interactive"
   "craft-config/minecraft"
   "github.com/aws/aws-sdk-go/aws"
+  "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 )
 
@@ -40,7 +41,7 @@ var (
   rconPortArg                       string
   rconPassword                      string
 
-  log = logrus.New()
+  log = sl.New()
   awsConfig                         *aws.Config
 )
 
@@ -126,10 +127,7 @@ func doModifyServerConfig() {
       serverConfig.SetEntry(k,v)
       serverConfig.WriteToFile(newServerConfigFileName)
     } else {
-      log.WithFields(logrus.Fields{
-        "key": k,
-        "config-file": serverConfigFileName,
-      }).Fatalf("Key \"%s\" not found in configuration \"%s\". No files updated.\n",k,serverConfigFileName)
+      log.Fatal(logrus.Fields{"key": k,"config-file": serverConfigFileName,}, "Key not found in configuration. No files updated", nil)
     }
   }
 }
@@ -141,11 +139,11 @@ func doArchiveAndPublish() {
   rcon, err := minecraft.NewRconWithRetry(serverIpArg, rconPortArg, rconPassword, retries, waitTime)
   server := serverIpArg + ":" + rconPortArg
   if err != nil {
-    log.WithFields(logrus.Fields{
+    log.Error(logrus.Fields{
       "server": server, 
       "retries": retries, 
       "retryWait": waitTime,
-    }).Error("RCON Connection failed. Can't archive")
+      }, "RCON Connection failed. Can't archive", err)
     return
   }
 
@@ -168,13 +166,13 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
   for {
     users, err := rcon.NumberOfUsers()
     if err != nil { 
-      log.Errorf("Can't get the numbers of users from the server. %s", err)
+      log.Error(nil, "Can't get the numbers of users from the server.", err)
       return
     } 
     if users > 0 {
       archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
     } else {
-      log.Infof("No users on server. Not updating the archive. Checking again in %s.", delayTime )
+      log.Info(logrus.Fields{"rechecDelay": delayTime,}, "No users on server. Not updating the archive.")
     }
     time.Sleep(delayTime)
   }
@@ -184,18 +182,20 @@ func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string
   archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
   resp, err := minecraft.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
   if err != nil {
-    log.WithFields(archiveFields).WithError(err).Errorf("Error creating an archive and publishing to S3")
+    log.Error(archiveFields, "Error creating an archive and publishing to S3", err)
   } else {
     archiveFields["bucket"] = resp.BucketName
     archiveFields["archive"] = resp.StoredPath
-    log.WithFields(archiveFields).Infof("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
+    log.Info(archiveFields, "Published archive.")
   }
 }
+
+
 func configureLogs() {
-  f := new(minecraft.TextFormatter)
+  f := new(sl.TextFormatter)
   f.FullTimestamp = true
-  log.Formatter = f
-  log.Level = logrus.InfoLevel
+  log.SetFormatter(f)
+  log.SetLevel(logrus.InfoLevel)
 }
 
 func updateLogLevel() {
@@ -203,7 +203,7 @@ func updateLogLevel() {
   if debug || verbose {
     l = logrus.DebugLevel
   }
-  log.Level = l
+  log.SetLevel(l)
   minecraft.SetLogLevel(l)
 }
 

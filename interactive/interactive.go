@@ -12,6 +12,7 @@ import (
   "craft-config/minecraft"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/fsnotify/fsnotify"
+  "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 )
 
@@ -77,9 +78,7 @@ var (
 )
 
 func init() {
-  // log.Formatter = new(logrus.JSONFormatter)
-  log.Formatter = new(minecraft.TextFormatter)
-  logrus.SetLevel(logrus.DebugLevel)
+
 
   watchDone = make(chan bool)
 
@@ -344,6 +343,9 @@ func updateLogSettings() {
   log.WithField("loglevel", logLevel).Info("Setting log level.")
   log.Level = logLevel
   minecraft.SetLogLevel(logLevel)
+  // log.Formatter = new(logrus.JSONFormatter)
+  log.Formatter = new(sl.TextFormatter)
+  logrus.SetLevel(logrus.DebugLevel)
 }
 
 func doQuit() (error) {
