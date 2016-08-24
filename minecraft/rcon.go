@@ -12,6 +12,7 @@ import(
   // "archive/zip"
   // "path/filepath"
   "github.com/bearbin/mcgorcon"
+  "github.com/Sirupsen/logrus"
   )
 
 type Rcon struct {
@@ -20,6 +21,7 @@ type Rcon struct {
   Password string
   Client *mcgorcon.Client
 }
+
 
 // create a new connection.
 func NewRcon(host string, port string, pw string) (rcon *Rcon, err error) {
@@ -33,16 +35,22 @@ func NewRcon(host string, port string, pw string) (rcon *Rcon, err error) {
     var client mcgorcon.Client
     client, err = mcgorcon.Dial(rcon.Host, rcon.Port, rcon.Password)
     if err == nil {
-      log.Debugf("NewRcon: connected to server %s:%d", rcon.Host, rcon.Port)
+      log.WithFields(logrus.Fields{"server": rcon.Host, "port": rcon.Port,}).Debug("NewRcon: connected to server")
       rcon.Client = &client
     }
   }
   return  rcon, err
 }
 
+func (rc *Rcon) HasConnection() bool {
+  return rc.Client != nil
+}
+
 func (rc *Rcon) Send(command string) (reply string, err error ) {
   if rc.Client == nil { return reply, fmt.Errorf("Rcon: Host connection empty.")}
-  return rc.Client.SendCommand(command)
+  reply, err = rc.Client.SendCommand(command)
+  if err != nil { err = fmt.Errorf("Failed to send \"%s\" to server: %s", command, err)}
+  return reply, err
 }
 
 func (rc *Rcon) SaveOn() (reply string, err error){

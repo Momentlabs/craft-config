@@ -10,21 +10,13 @@ import(
   "time"
   "archive/zip"
   "path/filepath"
-  "github.com/op/go-logging"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/aws/aws-sdk-go/service/s3"
+  // "github.com/op/go-logging"
+  "github.com/Sirupsen/logrus"
 )
 
-
-var (
-  log = logging.MustGetLogger("craft-config/minecraft")
-)
-
-func init() {
-  // logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
-  logging.SetLevel(logging.INFO, "craft-config/minecraft")
-}
 
 // Create a server archive and then publish to S3.
 func ArchiveAndPublish(rcon *Rcon, serverDirectory string, bucketName string, user string, config *aws.Config) (resp *PublishedArchiveResponse, err error) {
@@ -39,43 +31,46 @@ func ArchiveAndPublish(rcon *Rcon, serverDirectory string, bucketName string, us
 
 func ArchiveServer(rcon *Rcon, serverDirectory string, archiveFileName string) (err error) {
   _, err = rcon.SaveAll()
-  if err != nil {return err}
+  if err != nil { return err }
   _, err = rcon.SaveOff()
-  if err != nil {return err}
+  if err != nil { return err }
+
   err = CreateServerArchive(serverDirectory, archiveFileName)
-  _, newErr := rcon.SaveOn()
-  if err != nil { return err}
-  if newErr != nil {
+
+  _,rcErr := rcon.SaveOn()
+  if err != nil { return err }
+  if rcErr != nil {
     err = fmt.Errorf("ArchiveServer: server archived, problem turning auto-save back on: %s", err)
   }
+  log.WithFields(logrus.Fields{"dir": serverDirectory, "archive": archiveFileName}).Info("Archived server.")
   return err
 }
 
 // Make a zipfile of the server directory in directoryName.
 func CreateServerArchive(directoryName, zipfileName string) (err error) {
 
-  log.Debugf("ArchiveServer: going to archive %s to %s\n", directoryName, zipfileName)
+  log.WithFields(logrus.Fields{"dir": directoryName, "archive": zipfileName,}).Debug("Archiving server.")
   zipFile, err := os.Create(zipfileName)
-  if err != nil { return fmt.Errorf("ArchiveServer: can't open zipfile %s: %s", zipfileName, err) }
+  if err != nil { return fmt.Errorf("CreateArchiveServer: can't open zipfile %s: %s", zipfileName, err) }
   defer zipFile.Close()
   archive := zip.NewWriter(zipFile)
   defer archive.Close()
 
   dir, err := os.Open(directoryName)
-  if err != nil { return fmt.Errorf("ArchiveServer: can't open server directory %s: %s", directoryName, err) }
+  if err != nil { return fmt.Errorf("CreateArchiveServer: can't open server directory %s: %s", directoryName, err) }
   dirInfo, err := dir.Stat()
-  if err != nil { return fmt.Errorf("ArchiveServer: can't stat directory %s: %s", directoryName, err) }
-  if !dirInfo.IsDir() { return fmt.Errorf("ArchiveServer: server directory %s is not a directory.") }
+  if err != nil { return fmt.Errorf("CreateArchiveServer: can't stat directory %s: %s", directoryName, err) }
+  if !dirInfo.IsDir() { return fmt.Errorf("CreateArchiveServer: server directory %s is not a directory.") }
 
   currentDir, err := os.Getwd()
-  if err != nil { return fmt.Errorf("ArchiveServer: can't get the current directory: %s", err) }
+  if err != nil { return fmt.Errorf("CreativeArchiveServer: can't get the current directory: %s", err) }
   defer os.Chdir(currentDir)
 
   err = dir.Chdir()
-  if err != nil { return fmt.Errorf("ArchiveServer: can't change to server directory %s: %s", directoryName, err) }
+  if err != nil { return fmt.Errorf("CreativeArchiveServer: can't change to server directory %s: %s", directoryName, err) }
 
   fileNames := getServerFileNames()
-  log.Debugf("ArchiveServer: will save %d entries to archive.\n", len(fileNames))
+  log.WithFields(logrus.Fields{"length": len(fileNames),}).Debugf("Saving files to archive")
   for _, fileName := range fileNames {
     err = writeFileToZip("", fileName, archive)
     // err = writeFileToZip(directoryName, fileName, archive)
@@ -119,12 +114,12 @@ func writeFileToZip(baseDir, fileName string, archive *zip.Writer) (err error) {
       header.Method = zip.Deflate // Is this necessary?
     }
 
-    log.Debugf("Writing Zip Header with Name: %s", header.Name)
+    log.WithField("zip-header", header.Name).Debug("Writing Zip Header.")
     writer, err := archive.CreateHeader(header)
     if err != nil { return fmt.Errorf("Couldn't write header to archive: %s", err)}
 
     if !info.IsDir() {
-        log.Debugf("Opening and copying file to archive: %s", path)
+        log.WithField("file", path).Debugf("Opening and copying file to archive")
         file, err := os.Open(path)
         if err != nil { fmt.Errorf("Couldn't open file %s: %s", path, err) }
         _, err = io.Copy(writer, file)

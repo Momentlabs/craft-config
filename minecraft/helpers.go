@@ -7,7 +7,7 @@ import (
 
 func checkFatalError(e error) {
   if e != nil {
-    log.Critical(e)
+    log.Fatal(e)
     os.Exit(-1)
   }
 }

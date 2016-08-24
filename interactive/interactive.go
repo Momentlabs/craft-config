@@ -1,5 +1,6 @@
 package interactive 
 
+
 import (
   "gopkg.in/alecthomas/kingpin.v2"
   "github.com/bobappleyard/readline"
@@ -9,9 +10,13 @@ import (
   "os"
   "path/filepath"
   "craft-config/minecraft"
+  // "github.com/apex/log"
+  // "github.com/apex/log/handlers/cli"
   "github.com/aws/aws-sdk-go/aws"
-  "github.com/op/go-logging"
+  // "github.com/op/go-logging"
   "github.com/fsnotify/fsnotify"
+  "github.com/Sirupsen/logrus"
+
 )
 
 var (
@@ -23,6 +28,15 @@ var (
   quitCmd *kingpin.CmdClause
   verboseCmd *kingpin.CmdClause
   verbose bool
+  debugCmd *kingpin.CmdClause
+  debug bool
+
+  rcon *minecraft.Rcon
+  rconCmd *kingpin.CmdClause
+  serverIpArg string
+  rconPortArg string
+  rconPassword string
+  noRcon bool
 
   // Read a configuration file in the current config
   currentServerConfigFileNameArg string
@@ -57,23 +71,32 @@ var (
   watchEventsStartCmd *kingpin.CmdClause
   watchEventsStopCmd *kingpin.CmdClause
 
-  log = logging.MustGetLogger("craft-config/minecraft")
+  // log = logging.MustGetLogger("craft-config/minecraft")
+  log = logrus.New()
+
 
   // event Watcher control.
   watchDone chan bool
   watcher *fsnotify.Watcher
 
-  rcon *minecraft.Rcon
 )
 
 func init() {
-  logging.SetLevel(logging.INFO, "craft-config/interactive")
+  // log.SetHandler(cli.Default)
+  // log.SetLevel(log.InfoLevel)
+  // logging.SetLevel(logging.INFO, "craft-config/interactive")
+  log.Formatter = new(logrus.JSONFormatter)
+  log.Formatter = new(logrus.TextFormatter)
+  logrus.SetLevel(logrus.DebugLevel)
+
   watchDone = make(chan bool)
 
   app = kingpin.New("", "Interactive mode.").Terminate(func(int){})
 
   // state
+  rconCmd = app.Command("rcon", "toggle rcon use.")
   verboseCmd = app.Command("verbose", "toggle verbose mode.")
+  debugCmd = app.Command("debug", "toggle the debug reporting.")
   exitCmd = app.Command("exit", "exit the program. <ctrl-D> works too.")
   quitCmd = app.Command("quit", "exit the program.")
 
@@ -92,8 +115,12 @@ func init() {
 
   archiveCmd := app.Command("archive", "Context for managing archives.")
   archiveServerCmd = archiveCmd.Command("server", "Archive a server into a zip file.")
+  archiveServerCmd.Flag("no-rcon","Don't try to connect to an RCON server for archiving. UNSAFE.").BoolVar(&noRcon)
   archiveServerCmd.Arg("server-directory", "Relative location of server.").Default("server").StringVar(&serverDirectoryNameArg)
   archiveServerCmd.Arg("archive-file", "Name of archive file to create.").Default("server.zip").StringVar(&archiveFileNameArg)
+  archiveServerCmd.Arg("server-ip", "Server IP or dns. Used to get an RCON connection.").Default("127.0.0.1").StringVar(&serverIpArg)
+  archiveServerCmd.Arg("rcon-port", "Port on the server where RCON is listening.").Default("25575").StringVar(&rconPortArg)
+  archiveServerCmd.Arg("rcon-ps", "Password for rcon connection.").Default("testing").StringVar(&rconPassword)
   archivePublishCmd = archiveCmd.Command("publish", "Publish and archive to S3.")
   archivePublishCmd.Arg("user", "User of archive.").Required().StringVar(&userNameArg)
   archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default("server.zip").StringVar(&archiveFileNameArg)
@@ -112,9 +139,6 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
   // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
   testString = []string{}
 
-  rcon, err = minecraft.NewRcon("127.0.0.1", "25575", "testing")
-
-
   // Prepare a line for parsing
   line = strings.TrimRight(line, "\n")
   fields := []string{}
@@ -130,13 +154,15 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
   } else {
     switch command {
       case verboseCmd.FullCommand(): err = doVerbose()
+      case debugCmd.FullCommand(): err = doDebug()
       case exitCmd.FullCommand(): err = doQuit()
       case quitCmd.FullCommand(): err = doQuit()
+      case rconCmd.FullCommand(): err = doRcon()
       case readServerConfigFileCmd.FullCommand(): err = doReadServerConfigFile()
       case printServerConfigCmd.FullCommand(): err = doPrintServerConfig()
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
-      case archiveServerCmd.FullCommand(): err = doArchiveServer(rcon)
+      case archiveServerCmd.FullCommand(): err = doArchiveServer()
       case archivePublishCmd.FullCommand(): err = doPublishArchive(awsConfig)
       case watchEventsStartCmd.FullCommand(): err = doWatchEventsStart()
       case watchEventsStopCmd.FullCommand(): err = doWatchEventsStop()
@@ -169,8 +195,24 @@ func doSetServerConfigValue() (error) {
   return nil
 }
 
-func doArchiveServer(rcon *minecraft.Rcon) (error) {
-  err := minecraft.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
+func doArchiveServer() (err error) {
+  // This panics?
+  // connected := (rcon != nil) || rcon.HasConnection()
+  connected := false
+  if rcon != nil {
+    connected = rcon.HasConnection()
+  }
+
+  if noRcon {
+    log.Info("Archiving without stopping saves on the server (no RCON connection). This is unsafe.")
+    err = minecraft.CreateServerArchive(serverDirectoryNameArg, archiveFileNameArg)
+  } else {
+    if !connected {
+      rcon, err = minecraft.NewRcon(serverIpArg, rconPortArg, rconPassword)
+      if err != nil { return fmt.Errorf("Can't open rcon connection to server %s:%s %s", serverIpArg, rconPortArg, err) }
+    }
+    err = minecraft.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
+  }
   return err
 }
 
@@ -221,11 +263,24 @@ func doWatchEventsStart() (err error) {
 
 // add the directories starting at the base to a watcher.
 func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
-  watchFileName := "."
-  err = filepath.Walk(watchFileName, func(path string, info os.FileInfo, err error) (error) {
+  // f := log.Fields{
+  //   "watchDir": baseDir,
+  //   "file": "",    
+  // }.Fields()
+  // ctx := log.WithFields(f)
+  // fds := f.Fields()
+
+  // ctx.Debug("Adding files to directory.")
+  f := logrus.Fields{ "watchDir": baseDir, "file": ""}
+  log.WithFields(f).Debug("Adding files to directory.")
+  err = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) (error) {
+    // fds["file"] = path
+    // ctx.Debug("Adding a file.")
+    f["file"] = path
+    log.WithFields(f).Debug("Adding a file.")
     if err != nil { return err }
     if info.IsDir() {
-      log.Infof("Adding %s to watch list.", path)
+      // log.Infof("Adding %s to watch list.", path)
       err = w.Add(path)
     }
     return err
@@ -245,20 +300,58 @@ func doWatchEventsStop() (error) {
 }
 
 // Interactive Mode support functions.
+func toggleNoRcon() bool {
+  noRcon = !noRcon
+  return noRcon
+}
+
 func toggleVerbose() bool {
   verbose = !verbose
   return verbose
 }
 
-func doVerbose() (error) {
-  if toggleVerbose() {
-    logging.SetLevel(logging.DEBUG, "craft-config/minecraft")
-    fmt.Println("Verbose is on.")
+func toggleDebug() bool {
+  debug = !debug
+  return debug
+}
+
+func doRcon() (error) {
+  if toggleNoRcon() {
+    fmt.Println("Rcon is turned off.")
   } else {
-    logging.SetLevel(logging.INFO, "craft-config/minecraft")
-    fmt.Println("Verbose is off.")
+    fmt.Println("Rcon is turned on.")
   }
   return nil
+}
+
+func doVerbose() (error) {
+  if toggleVerbose() {
+    fmt.Println("Verbose is on.")
+  } else {
+    fmt.Println("Verbose is off.")
+  }
+  updateLogSettings()
+  return nil
+}
+
+func doDebug() (error) {
+  if toggleDebug() {
+    fmt.Println("Debug is on.")
+  } else {
+    fmt.Println("Debug is off.")    
+  }
+  updateLogSettings()
+  return nil
+}
+
+func updateLogSettings() {
+  logLevel := logrus.InfoLevel
+  if verbose || debug {
+    logLevel = logrus.DebugLevel
+  }
+  log.WithField("loglevel", logLevel).Info("Setting log level.")
+  log.Level = logLevel
+  minecraft.SetLogLevel(logLevel)
 }
 
 func doQuit() (error) {

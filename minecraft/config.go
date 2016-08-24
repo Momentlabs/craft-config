@@ -43,7 +43,7 @@ func (cfg *ServerConfig) SetEntry(key string, value string) {
     checkFatalError(err)
     entry.SetValue(value)
   } else {
-    log.Notice("Key \"%s\" not present in config. Configuration unmodified.", key)
+    log.Info("Key \"%s\" not present in config. Configuration unmodified.", key)
   }
 }
 

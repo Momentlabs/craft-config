@@ -8,6 +8,9 @@ import (
   "ecs-pilot/awslib"
   "craft-config/interactive"
   "craft-config/minecraft"
+  "github.com/apex/log"
+  "github.com/apex/log/handlers/text"
+  // "github.com/apex/log/handlers/json"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/op/go-logging"
 )
@@ -38,13 +41,14 @@ var (
   rconPortArg                       string
   rconPassword                      string
 
-  log                               *logging.Logger
+  // log                               *logging.Logger
   awsConfig                         *aws.Config
 )
 
 
 func init() {
-  log = logging.MustGetLogger("craft-config")
+  // log = logging.MustGetLogger("craft-config")
+  log.SetHandler(text.New(os.Stderr))
   keyValueMap = make(map[string]string)
 
 
@@ -186,7 +190,7 @@ func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string
 }
 
 func setLogLevel(level logging.Level) {
-  logs := []string{"craft-config", "craft-config/interactive", "craft-config/minecraft"}
+  logs := []string{"craft-config/interactive", "craft-config/minecraft"}
   for _, logName := range logs {
     log.Infof("Setting log \"%s\" to %s\n", logName, level)
     logging.SetLevel(level, logName)
