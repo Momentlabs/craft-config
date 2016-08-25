@@ -180,7 +180,7 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
     if users > 0 {
       archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
     } else {
-      log.Info(logrus.Fields{"rechecDelay": delayTime,}, "No users on server. Not updating the archive.")
+      log.Info(logrus.Fields{"retryDelay": delayTime,}, "No users on server. Not updating the archive.")
     }
     time.Sleep(delayTime)
   }
@@ -216,7 +216,6 @@ func configureLogs() {
     log.SetFormatter(f)
     minecraft.SetLogFormatter(f)
   }
-  log.Info(nil, "Setting level.")
   log.SetLevel(logrus.InfoLevel)
 }
 
