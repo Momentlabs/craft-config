@@ -7,8 +7,9 @@ import (
   "time"
   "ecs-pilot/awslib"
   "craft-config/interactive"
-  "craft-config/minecraft"
+  // "craft-config/minecraft"
   "github.com/aws/aws-sdk-go/aws"
+  "github.com/jdrivas/mclib"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 )
@@ -123,12 +124,12 @@ func main() {
 //
 
 func doListServerConfig() {
-  serverConfig := minecraft.NewConfigFromFile(serverConfigFileName)
+  serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   serverConfig.List()
 }
 
 func doModifyServerConfig() {
-  serverConfig := minecraft.NewConfigFromFile(serverConfigFileName)
+  serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   for k, v := range keyValueMap {
     if verbose {fmt.Printf("Modifying: \"%s\" = \"%s\"\n", k, v)}
     if serverConfig.HasKey(k) {
@@ -144,7 +145,7 @@ func doArchiveAndPublish() {
 
   retries := 10
   waitTime := 5 * time.Second
-  rcon, err := minecraft.NewRconWithRetry(serverIpArg, rconPortArg, rconPassword, retries, waitTime)
+  rcon, err := mclib.NewRconWithRetry(serverIpArg, rconPortArg, rconPassword, retries, waitTime)
   server := serverIpArg + ":" + rconPortArg
   if err != nil {
     log.Error(logrus.Fields{
@@ -169,7 +170,7 @@ func doArchiveAndPublish() {
 // update when one shows up.
 //
 // Finally  Put the whole thing in a go-routine that checks for a stop (see the watcher in ineteractive.)
-func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+func continuousArchiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
   delayTime := 5 * time.Minute
   for {
     users, err := rcon.NumberOfUsers()
@@ -186,9 +187,9 @@ func continuousArchiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, u
   }
 }
 
-func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+func archiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
   archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
-  resp, err := minecraft.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
+  resp, err := mclib.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
   if err != nil {
     log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
   } else {
@@ -200,23 +201,27 @@ func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string
 
 
 func configureLogs() {
+  setFormatter()
+  updateLogLevel()
+}
+
   // TODO: Clearly this should set a *formatter in the switch
   // and then set each of the loggers to that formater.
   // The foramtters are of different types though, and 
   // lorgus.Formatter is an interface so I can't create a 
-  // var out of it. I konw there is a way, I just don't know what it is.
+  // var out of it. I konw there is a way, I just don't know what it is.func setFormatter() {
+func setFormatter() {
   switch logsFormatArg {
   case jsonLog:
     f := new(logrus.JSONFormatter)
     log.SetFormatter(f)
-    minecraft.SetLogFormatter(f)
+    mclib.SetLogFormatter(f)
   case textLog:
     f := new(sl.TextFormatter)
     f.FullTimestamp = true
     log.SetFormatter(f)
-    minecraft.SetLogFormatter(f)
+    mclib.SetLogFormatter(f)
   }
-  log.SetLevel(logrus.InfoLevel)
 }
 
 func updateLogLevel() {
@@ -225,6 +230,6 @@ func updateLogLevel() {
     l = logrus.DebugLevel
   }
   log.SetLevel(l)
-  minecraft.SetLogLevel(l)
+  mclib.SetLogLevel(l)
 }
 

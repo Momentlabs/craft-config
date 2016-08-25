@@ -6,12 +6,13 @@ import (
   "io"
   "os"
   "strings"
-  "craft-config/minecraft"
+  // "craft-config/minecraft"
   "path/filepath"
   "github.com/alecthomas/kingpin"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/bobappleyard/readline"
   "github.com/fsnotify/fsnotify"
+  "github.com/jdrivas/mclib"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 )
@@ -24,11 +25,13 @@ var (
   exitCmd *kingpin.CmdClause
   quitCmd *kingpin.CmdClause
   verboseCmd *kingpin.CmdClause
+  logFormatCmd *kingpin.CmdClause
   verbose bool
+  logFormatArg string
   debugCmd *kingpin.CmdClause
   debug bool
 
-  rcon *minecraft.Rcon
+  rcon *mclib.Rcon
   rconCmd *kingpin.CmdClause
   serverIpArg string
   rconPortArg string
@@ -37,7 +40,7 @@ var (
 
   // Read a configuration file in the current config
   currentServerConfigFileNameArg string
-  currentServerConfig *minecraft.ServerConfig
+  currentServerConfig *mclib.ServerConfig
 
   readServerConfigFileCmd *kingpin.CmdClause
 
@@ -68,7 +71,7 @@ var (
   watchEventsStartCmd *kingpin.CmdClause
   watchEventsStopCmd *kingpin.CmdClause
 
-  log = logrus.New()
+  log = sl.New()
 
 
   // event Watcher control.
@@ -78,8 +81,6 @@ var (
 )
 
 func init() {
-
-
   watchDone = make(chan bool)
 
   app = kingpin.New("", "Interactive mode.").Terminate(func(int){})
@@ -90,6 +91,9 @@ func init() {
   debugCmd = app.Command("debug", "toggle the debug reporting.")
   exitCmd = app.Command("exit", "exit the program. <ctrl-D> works too.")
   quitCmd = app.Command("quit", "exit the program.")
+  logFormatCmd = app.Command("log", "set the log format")
+  logFormatCmd.Arg("format", "What format should we use").Default(textLog).EnumVar(&logFormatArg, jsonLog, textLog)
+
 
   // Read and manipulate a configuration file.
   readServerConfigFileCmd = app.Command("read-config", "read a server config file in.")
@@ -122,6 +126,7 @@ func init() {
   watchEventsStartCmd = watchEventsCmd.Command("start", "Start watching events.")
   watchEventsStopCmd = watchEventsCmd.Command("stop", "Stop watching events.")
 
+  configureLogs()
 }
 
 
@@ -146,6 +151,7 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
     switch command {
       case verboseCmd.FullCommand(): err = doVerbose()
       case debugCmd.FullCommand(): err = doDebug()
+      case logFormatCmd.FullCommand(): err = doLogFormat()
       case exitCmd.FullCommand(): err = doQuit()
       case quitCmd.FullCommand(): err = doQuit()
       case rconCmd.FullCommand(): err = doRcon()
@@ -164,7 +170,7 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
 
 // Interactive Command processing
 func doReadServerConfigFile() (error) {
-  currentServerConfig = minecraft.NewConfigFromFile(currentServerConfigFileNameArg)
+  currentServerConfig = mclib.NewConfigFromFile(currentServerConfigFileNameArg)
   return nil
 }
 
@@ -195,20 +201,20 @@ func doArchiveServer() (err error) {
   }
 
   if noRcon {
-    log.Info("Archiving without stopping saves on the server (no RCON connection). This is unsafe.")
-    err = minecraft.CreateServerArchive(serverDirectoryNameArg, archiveFileNameArg)
+    log.Info(nil, "Archiving without stopping saves on the server (no RCON connection). This is unsafe.")
+    err = mclib.CreateServerArchive(serverDirectoryNameArg, archiveFileNameArg)
   } else {
     if !connected {
-      rcon, err = minecraft.NewRcon(serverIpArg, rconPortArg, rconPassword)
+      rcon, err = mclib.NewRcon(serverIpArg, rconPortArg, rconPassword)
       if err != nil { return fmt.Errorf("Can't open rcon connection to server %s:%s %s", serverIpArg, rconPortArg, err) }
     }
-    err = minecraft.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
+    err = mclib.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
   }
   return err
 }
 
 func doPublishArchive(awsConfig *aws.Config) (error) {
-  resp, err := minecraft.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, awsConfig)
+  resp, err := mclib.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, awsConfig)
   if err == nil {
     fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
   }
@@ -225,25 +231,26 @@ func doWatchEventsStart() (err error) {
   if err != nil { return fmt.Errorf("Couldn't create a notifycation watcher: %s", err) }
 
   go func() {
-    log.Info("Starting file watch.")
+    log.Info(nil, "Starting file watch.")
     for {
       select {
       case event := <-watcher.Events:
-        log.Infof("%s", event)
+        log.Info(logrus.Fields{"event": event}, "File Event")
         if event.Op & fsnotify.Create == fsnotify.Create { // If we add a dir, watch it.
           file, err := os.Open(event.Name)
-          if err != nil {log.Errorf("Can't open new file %s: %s", event.Name, err)}
+          f := logrus.Fields{"file": event.Name}
+          if err != nil {log.Error(f, "Can't open new file.", err)}
           fInfo, err := file.Stat()
-          if err != nil {log.Errorf("Can't state new file %s: %s", event.Name, err)}
+          if err != nil {log.Error(f, "Can't state new file.", err)}
           if fInfo.IsDir() {
-            log.Infof("Adding director %s to watch.", event.Name)
+            log.Info(f, "Adding directory to watch.")
             watcher.Add(event.Name)
           }
         }
       case err := <-watcher.Errors:
-        log.Infof("error: %s", err)
+        log.Error(nil, "File watch.", err)
       case <-watchDone:
-        log.Infof("Stopping file watch.")
+        log.Info(nil, "Stopping file watch.")
         return
       } 
     }
@@ -263,12 +270,12 @@ func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
 
   // ctx.Debug("Adding files to directory.")
   f := logrus.Fields{ "watchDir": baseDir, "file": ""}
-  log.WithFields(f).Debug("Adding files to directory.")
+  log.Debug(f, "Adding files to directory.")
   err = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) (error) {
     // fds["file"] = path
     // ctx.Debug("Adding a file.")
     f["file"] = path
-    log.WithFields(f).Debug("Adding a file.")
+    log.Debug(f, "Adding a file.")
     if err != nil { return err }
     if info.IsDir() {
       // log.Infof("Adding %s to watch list.", path)
@@ -281,9 +288,9 @@ func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
 
 func doWatchEventsStop() (error) {
   if watcher == nil { return fmt.Errorf("No watcher to stop.")}
-  log.Debugf("Shutting done the file watcher.")
+  log.Debug(nil, "Shutting done the file watcher.")
   watchDone <- true
-  log.Debugf("Closing the watcher.")
+  log.Debug(nil, "Closing the watcher.")
   watcher.Close()
   watcher = nil
   fmt.Printf("File watch stopped.\n")
@@ -321,7 +328,7 @@ func doVerbose() (error) {
   } else {
     fmt.Println("Verbose is off.")
   }
-  updateLogSettings()
+  updateLogLevel()
   return nil
 }
 
@@ -331,22 +338,73 @@ func doDebug() (error) {
   } else {
     fmt.Println("Debug is off.")    
   }
-  updateLogSettings()
+  updateLogLevel()
   return nil
 }
 
-func updateLogSettings() {
-  logLevel := logrus.InfoLevel
-  if verbose || debug {
-    logLevel = logrus.DebugLevel
-  }
-  log.WithField("loglevel", logLevel).Info("Setting log level.")
-  log.Level = logLevel
-  minecraft.SetLogLevel(logLevel)
-  // log.Formatter = new(logrus.JSONFormatter)
-  log.Formatter = new(sl.TextFormatter)
-  logrus.SetLevel(logrus.DebugLevel)
+func doLogFormat() (error) {
+  setFormatter()
+  fmt.Printf("Log format is now: %s.\n", logFormatArg)
+  return nil
 }
+
+func configureLogs() {
+  setFormatter()
+  updateLogLevel()
+}
+
+const (
+  jsonLog = "json"
+  textLog = "text"
+  cliLog = "cli"
+)
+
+// TODO: Clearly this should set a *logrus.Formatter in the switch
+// and then set each of the loggers to that formater.
+// The foramtters are of different types though, and 
+// lorgus.Formatter is an interface so I can't create a 
+// var out of it. I konw there is a way, I just 
+// don't know what it is.
+func setFormatter() {
+  switch logFormatArg {
+  case jsonLog:
+    f := new(logrus.JSONFormatter)
+    log.SetFormatter(f)
+    mclib.SetLogFormatter(f)
+  case textLog:
+    f := new(sl.TextFormatter)
+    f.FullTimestamp = true
+    log.SetFormatter(f)
+    mclib.SetLogFormatter(f)
+  default:
+    f := new(sl.TextFormatter)
+    f.FullTimestamp = true
+    log.SetFormatter(f)
+    mclib.SetLogFormatter(f)
+  }
+}
+
+func updateLogLevel() {
+  l := logrus.InfoLevel
+  if debug || verbose {
+    l = logrus.DebugLevel
+  }
+  log.SetLevel(l)
+  mclib.SetLogLevel(l)
+}
+
+// func updateLogSettings() {
+//   logLevel := logrus.InfoLevel
+//   if verbose || debug {
+//     logLevel = logrus.DebugLevel
+//   }
+//   log.WithField("loglevel", logLevel).Info("Setting log level.")
+//   log.Level = logLevel
+//   mclib.SetLogLevel(logLevel)
+//   // log.Formatter = new(logrus.JSONFormatter)
+//   log.Formatter = new(sl.TextFormatter)
+//   logrus.SetLevel(logrus.DebugLevel)
+// }
 
 func doQuit() (error) {
   return io.EOF
