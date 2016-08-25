@@ -2,15 +2,15 @@ package interactive
 
 
 import (
-  "gopkg.in/alecthomas/kingpin.v2"
-  "github.com/bobappleyard/readline"
-  "strings"
   "fmt"
   "io"
   "os"
-  "path/filepath"
+  "strings"
   "craft-config/minecraft"
+  "path/filepath"
+  "github.com/alecthomas/kingpin"
   "github.com/aws/aws-sdk-go/aws"
+  "github.com/bobappleyard/readline"
   "github.com/fsnotify/fsnotify"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"

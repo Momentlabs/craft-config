@@ -2,7 +2,7 @@ package main
 
 import (
   "fmt"
-  "gopkg.in/alecthomas/kingpin.v2"
+  "github.com/alecthomas/kingpin"
   "os"
   "time"
   "ecs-pilot/awslib"
@@ -13,12 +13,20 @@ import (
   "github.com/Sirupsen/logrus"
 )
 
+// Log formats.
+const (
+  jsonLog = "json"
+  textLog = "text"
+)
+
 var (
   app                               *kingpin.Application
   verbose                           bool
   debug                             bool
   region                            string
   awsConfigFileArg                  string
+  profileArg                        string
+  logsFormatArg                     string
 
   // Prompt for Commands
   interactiveCmd                       *kingpin.CmdClause
@@ -54,6 +62,8 @@ func init() {
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
   app.Flag("debug", "Set logging level to debug: lots of logging.").BoolVar(&debug)
   app.Flag("aws-config", "Configuration file location.").StringVar(&awsConfigFileArg)
+  app.Flag("log-format", "Choose text or json output.").Default(jsonLog).EnumVar(&logsFormatArg, jsonLog, textLog)
+  app.Flag("profile", "AWS profile for credentials.").Default("minecraft").StringVar(&profileArg)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
@@ -82,12 +92,10 @@ func init() {
 }
 
 func main() {
+  command := kingpin.MustParse(app.Parse(os.Args[1:]))
   configureLogs()
 
-  command := kingpin.MustParse(app.Parse(os.Args[1:]))
-  updateLogLevel()
-
-  awsConfig = awslib.GetConfig("minecraft", awsConfigFileArg)
+  awsConfig = awslib.GetConfig(profileArg, awsConfigFileArg)
   region = *awsConfig.Region
   accountAliases, err := awslib.GetAccountAliases(awsConfig)
   if err == nil {
@@ -182,7 +190,7 @@ func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string
   archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
   resp, err := minecraft.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
   if err != nil {
-    log.Error(archiveFields, "Error creating an archive and publishing to S3", err)
+    log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
   } else {
     archiveFields["bucket"] = resp.BucketName
     archiveFields["archive"] = resp.StoredPath
@@ -192,9 +200,23 @@ func archiveAndPublish(rcon *minecraft.Rcon, archiveDir, bucketName, user string
 
 
 func configureLogs() {
-  f := new(sl.TextFormatter)
-  f.FullTimestamp = true
-  log.SetFormatter(f)
+  // TODO: Clearly this should set a *formatter in the switch
+  // and then set each of the loggers to that formater.
+  // The foramtters are of different types though, and 
+  // lorgus.Formatter is an interface so I can't create a 
+  // var out of it. I konw there is a way, I just don't know what it is.
+  switch logsFormatArg {
+  case jsonLog:
+    f := new(logrus.JSONFormatter)
+    log.SetFormatter(f)
+    minecraft.SetLogFormatter(f)
+  case textLog:
+    f := new(sl.TextFormatter)
+    f.FullTimestamp = true
+    log.SetFormatter(f)
+    minecraft.SetLogFormatter(f)
+  }
+  log.Info(nil, "Setting level.")
   log.SetLevel(logrus.InfoLevel)
 }
 

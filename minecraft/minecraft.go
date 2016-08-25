@@ -11,7 +11,7 @@ var(
 )
 
 func init() {
-  defaultConfigureLogs()
+  configureLogs()
 }
 
 func SetLogLevel(l logrus.Level) {
@@ -22,11 +22,9 @@ func SetLogFormatter(f logrus.Formatter) {
   log.SetFormatter(f)
 }
 
-func defaultConfigureLogs() {
-  // log.Formatter = new(logrus.JSONFormatter)
+func configureLogs() {
   formatter := new(sl.TextFormatter)
   formatter.FullTimestamp = true
   log.SetFormatter(formatter)
-  // log.Logger.Level = logrus.InfoLevel
   log.SetLevel(logrus.InfoLevel)
 }
