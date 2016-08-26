@@ -41,6 +41,7 @@ var (
 
   archiveAndPublishCmd              *kingpin.CmdClause
   userArg                           string
+  serverNameArg                     string
   bucketNameArg                     string
   archiveDirectoryArg               string
   continuousArchiveArg              bool
@@ -83,11 +84,12 @@ func init() {
   archiveAndPublishCmd.Flag("server-ip", "IP address for the rcon server connection.").Default("127.0.0.1").StringVar(&serverIpArg)
   archiveAndPublishCmd.Flag("noPublish", "Don't publish the archive to S3, just create it.").Default("true").BoolVar(&publishArchiveArg)
   archiveAndPublishCmd.Flag("noRcon", "Don't try to use the RCON connection on the server to start/stop saving.  UNSAFE").Default("true").BoolVar(&useRconArg)
-  archiveAndPublishCmd.Flag("rcon-port", "Port for rcon server connection.").Default("25575").StringVar(&rconPortArg)
+  archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").StringVar(&rconPortArg)
   archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPassword)
-  archiveAndPublishCmd.Arg("user", "Name of user for archive publishing.").Required().StringVar(&userArg)
-  archiveAndPublishCmd.Arg("bucket name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
-  archiveAndPublishCmd.Arg("archive directory","to archive.a").Default(".").StringVar(&archiveDirectoryArg)
+  archiveAndPublishCmd.Flag("archive-directory","Where the server data is located.").Default(".").StringVar(&archiveDirectoryArg)
+  archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
+  archiveAndPublishCmd.Arg("user", "Name of user of the server were achiving.").Required().StringVar(&userArg)
+  archiveAndPublishCmd.Arg("server-name", "Name of the server were archiving.").Default("TestServer").StringVar(&serverNameArg)
 
   kingpin.CommandLine.Help = "A command-line minecraft config tool."
 }
@@ -100,7 +102,7 @@ func main() {
   region = *awsConfig.Region
   accountAliases, err := awslib.GetAccountAliases(awsConfig)
   if err == nil {
-    log.Debug(logrus.Fields{"account": accountAliases, "region": region}, "craft-config startup.")
+    log.Debug(logrus.Fields{"account": *accountAliases[0], "region": region}, "craft-config startup.")
   }
 
   // List of commands as parsed matched against functions to execute the commands.
@@ -142,24 +144,14 @@ func doModifyServerConfig() {
 }
 
 func doArchiveAndPublish() {
-
   retries := 10
   waitTime := 5 * time.Second
-  rcon, err := mclib.NewRconWithRetry(serverIpArg, rconPortArg, rconPassword, retries, waitTime)
-  server := serverIpArg + ":" + rconPortArg
-  if err != nil {
-    log.Error(logrus.Fields{
-      "server": server, 
-      "retries": retries, 
-      "retryWait": waitTime,
-      }, "RCON Connection failed. Can't archive", err)
-    return
-  }
-
+  server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, awsConfig)
+  server.NewRconWithRetry(retries, waitTime)
   if continuousArchiveArg {
-    continuousArchiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+    continuousArchiveAndPublish(server)
   } else {
-    archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+    archiveAndPublish(server)
   }
 }
 
@@ -170,26 +162,33 @@ func doArchiveAndPublish() {
 // update when one shows up.
 //
 // Finally  Put the whole thing in a go-routine that checks for a stop (see the watcher in ineteractive.)
-func continuousArchiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+func continuousArchiveAndPublish(s *mclib.Server) {
   delayTime := 5 * time.Minute
   for {
-    users, err := rcon.NumberOfUsers()
+    users, err := s.Rcon.NumberOfUsers()
     if err != nil { 
       log.Error(nil, "Can't get the numbers of users from the server.", err)
       return
     } 
     if users > 0 {
-      archiveAndPublish(rcon, archiveDirectoryArg, bucketNameArg, userArg, awsConfig)
+      archiveAndPublish(s)
     } else {
-      log.Info(logrus.Fields{"retryDelay": delayTime,}, "No users on server. Not updating the archive.")
+      log.Info(logrus.Fields{"retryDelay": delayTime.String(),}, "No users on server. Not updating the archive.")
     }
     time.Sleep(delayTime)
   }
 }
 
-func archiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
-  archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
-  resp, err := mclib.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
+func archiveAndPublish(s *mclib.Server) {
+
+  resp, err := s.SnapshotAndPublish()
+
+  archiveFields := logrus.Fields{
+    "user": s.User,
+    "serverName": s.Name,
+    "serverDir": s.ServerDirectory,
+    "bucket": s.ArchiveBucket,
+  }
   if err != nil {
     log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
   } else {
@@ -198,6 +197,18 @@ func archiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cf
     log.Info(archiveFields, "Published archive.")
   }
 }
+
+// func archiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
+//   archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
+//   resp, err := mclib.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
+//   if err != nil {
+//     log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
+//   } else {
+//     archiveFields["bucket"] = resp.BucketName
+//     archiveFields["archive"] = resp.StoredPath
+//     log.Info(archiveFields, "Published archive.")
+//   }
+// }
 
 
 func configureLogs() {

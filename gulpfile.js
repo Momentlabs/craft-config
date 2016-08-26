@@ -7,14 +7,14 @@ var util = require('gulp-util')
 var readline = require('readline')
 
 var gulpProcess;
-var verbose = false;
+var verbose = true;
 var rl = readline.createInterface({input: process.stdin, output: process.stdin});
 
 gulp.task('test', function() {
   if(verbose) {
-    args = ["test", "-v"]
+    args = ["test", "-test.short", "-v"]
   } else {
-    args = ["test"]
+    args = ["test", "-test.short"]
   }
 
   test = child.spawnSync("go", args)

@@ -193,6 +193,7 @@ func doSetServerConfigValue() (error) {
 }
 
 func doArchiveServer() (err error) {
+
   // This panics?
   // connected := (rcon != nil) || rcon.HasConnection()
   connected := false
@@ -261,14 +262,7 @@ func doWatchEventsStart() (err error) {
 
 // add the directories starting at the base to a watcher.
 func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
-  // f := log.Fields{
-  //   "watchDir": baseDir,
-  //   "file": "",    
-  // }.Fields()
-  // ctx := log.WithFields(f)
-  // fds := f.Fields()
 
-  // ctx.Debug("Adding files to directory.")
   f := logrus.Fields{ "watchDir": baseDir, "file": ""}
   log.Debug(f, "Adding files to directory.")
   err = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) (error) {
