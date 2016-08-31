@@ -9,12 +9,15 @@ import (
   // "craft-config/minecraft"
   "path/filepath"
   "github.com/alecthomas/kingpin"
-  "github.com/aws/aws-sdk-go/aws"
+  // "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/aws/session"
   "github.com/bobappleyard/readline"
   "github.com/fsnotify/fsnotify"
-  "github.com/jdrivas/mclib"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
+
+  // "github.com/jdrivas/awslib"
+  "github.com/jdrivas/mclib"
 )
 
 var (
@@ -130,7 +133,7 @@ func init() {
 }
 
 
-func doICommand(line string, awsConfig *aws.Config) (err error) {
+func doICommand(line string, sess *session.Session) (err error) {
 
   // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
   testString = []string{}
@@ -160,7 +163,7 @@ func doICommand(line string, awsConfig *aws.Config) (err error) {
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
       case archiveServerCmd.FullCommand(): err = doArchiveServer()
-      case archivePublishCmd.FullCommand(): err = doPublishArchive(awsConfig)
+      case archivePublishCmd.FullCommand(): err = doPublishArchive(sess)
       case watchEventsStartCmd.FullCommand(): err = doWatchEventsStart()
       case watchEventsStopCmd.FullCommand(): err = doWatchEventsStop()
     }
@@ -214,8 +217,8 @@ func doArchiveServer() (err error) {
   return err
 }
 
-func doPublishArchive(awsConfig *aws.Config) (error) {
-  resp, err := mclib.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, awsConfig)
+func doPublishArchive(sess *session.Session) (error) {
+  resp, err := mclib.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, sess)
   if err == nil {
     fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
   }
@@ -426,10 +429,10 @@ func promptLoop(prompt string, process func(string) (error)) (err error) {
 }
 
 // This gets called from the main program, presumably from the 'interactive' command on main's command line.
-func DoInteractive(awsConfig *aws.Config) {
+func DoInteractive(sess *session.Session) {
   prompt := "> "
   err := promptLoop(prompt, func(line string) (err error) {
-    return doICommand(line, awsConfig)
+    return doICommand(line, sess)
   })
   if err != nil {fmt.Printf("Error - %s.\n", err)}
 }

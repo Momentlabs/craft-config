@@ -5,13 +5,20 @@ import (
   "github.com/alecthomas/kingpin"
   "os"
   "time"
-  "ecs-pilot/awslib"
   "craft-config/interactive"
   // "craft-config/minecraft"
-  "github.com/aws/aws-sdk-go/aws"
-  "github.com/jdrivas/mclib"
+  // "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/aws/session"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
+
+  // THIS IS FOR DEVELOPMENT PURPOSES AND
+  // WILL LIKELY CAUSE ME TROUBLE.
+  // PROBABLY BEST TO REMOVE THIS ONCE 
+  // THE LIBRARIES ARE STABLE.
+  // "mclib"
+  "github.com/jdrivas/awslib"
+  "github.com/jdrivas/mclib"
 )
 
 // Log formats.
@@ -21,12 +28,16 @@ const (
 )
 
 var (
+  DEFAULT_REGION = "us-west-1"
+)
+
+var (
   app                               *kingpin.Application
   verbose                           bool
   debug                             bool
-  region                            string
-  awsConfigFileArg                  string
-  profileArg                        string
+  awsRegionArg                      string
+  awsProfileArg                     string
+  // awsConfigFileArg                  string
   logsFormatArg                     string
 
   // Prompt for Commands
@@ -52,7 +63,7 @@ var (
   rconPassword                      string
 
   log = sl.New()
-  awsConfig                         *aws.Config
+  sess *session.Session
 )
 
 
@@ -63,9 +74,12 @@ func init() {
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
   app.Flag("debug", "Set logging level to debug: lots of logging.").BoolVar(&debug)
-  app.Flag("aws-config", "Configuration file location.").StringVar(&awsConfigFileArg)
+
   app.Flag("log-format", "Choose text or json output.").Default(jsonLog).EnumVar(&logsFormatArg, jsonLog, textLog)
-  app.Flag("profile", "AWS profile for credentials.").Default("minecraft").StringVar(&profileArg)
+
+  // app.Flag("aws-config", "Configuration file location.").StringVar(&awsConfigFileArg)
+  app.Flag("region", "Aws region to use as a default (publishing archives.)").StringVar(&awsRegionArg)
+  app.Flag("profile", "AWS profile for configuration.").StringVar(&awsProfileArg)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
@@ -96,17 +110,50 @@ func init() {
 
 func main() {
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
+
   configureLogs()
 
-  awsConfig = awslib.GetConfig(profileArg, awsConfigFileArg)
-  region = *awsConfig.Region
-  accountAliases, err := awslib.GetAccountAliases(awsConfig)
+  // Get the default session
+
+  var sess *session.Session
+  var err error
+
+  // Note: We rely on NewSession to accomdate general defaults,
+  // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
+  f := logrus.Fields{"profile": awsProfileArg, "region": awsRegionArg,}
+  _ = "breakpoint"
+  if awsProfileArg == "" {
+    log.Debug(f, "Getting AWS session with NewSession() and defaults.")
+    sess, err = session.NewSession()
+  } else {
+    log.Debug(f, "Getting AWS session with default with Profile.")
+    sess, err = awslib.GetSession(awsProfileArg, "")
+  }
+
+  if err != nil {
+    log.Error(logrus.Fields{"profile": awsProfileArg,}, 
+      "Can't get aws configuration information for session.", err)
+  }
+
+  // sess.Config.Region = aws.String("us-west-1")
+  // if awsConfig.Region == nil || *awsConfig.Region == "" {
+  //   log.Debug(logrus.Fields{"region-arg": awsRegionArg,}, "Setting region")
+  //   if awsRegionArg == "" {
+  //     awsConfig.Region = &DEFAULT_REGION
+  //   } else {
+  //     awsConfig.Region = aws.String(awsRegionArg)
+  //   }
+  // } else {
+  //   log.Debug(logrus.Fields{"config-region": *awsConfig.Region,}, "Using default region")
+  // }
+
+  accountAliases, err := awslib.GetAccountAliases(sess.Config)
   if err == nil {
-    log.Debug(logrus.Fields{"account": *accountAliases[0], "region": region}, "craft-config startup.")
+    log.Debug(logrus.Fields{"account": *accountAliases[0], "region": *sess.Config.Region}, "craft-config startup.")
   }
 
   // List of commands as parsed matched against functions to execute the commands.
-  commandMap := map[string]func() {
+  commandMap := map[string]func(*session.Session) {
     listServerConfig.FullCommand(): doListServerConfig,
     modifyServerConfig.FullCommand(): doModifyServerConfig,
     archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
@@ -114,9 +161,9 @@ func main() {
 
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
-    interactive.DoInteractive(awsConfig)
+    interactive.DoInteractive(sess)
   } else {
-    commandMap[command]()
+    commandMap[command](sess)
   }
 }
 
@@ -125,12 +172,12 @@ func main() {
 // Command Implementations
 //
 
-func doListServerConfig() {
+func doListServerConfig(*session.Session) {
   serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   serverConfig.List()
 }
 
-func doModifyServerConfig() {
+func doModifyServerConfig(*session.Session) {
   serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   for k, v := range keyValueMap {
     if verbose {fmt.Printf("Modifying: \"%s\" = \"%s\"\n", k, v)}
@@ -143,10 +190,10 @@ func doModifyServerConfig() {
   }
 }
 
-func doArchiveAndPublish() {
+func doArchiveAndPublish(sess *session.Session) {
   retries := 10
   waitTime := 5 * time.Second
-  server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, awsConfig)
+  server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, sess)
   server.NewRconWithRetry(retries, waitTime)
   if continuousArchiveArg {
     continuousArchiveAndPublish(server)
