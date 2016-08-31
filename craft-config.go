@@ -60,7 +60,7 @@ var (
   publishArchiveArg                 bool
   serverIpArg                       string
   rconPortArg                       string
-  rconPassword                      string
+  rconPasswordArg                   string
 
   log = sl.New()
   sess *session.Session
@@ -99,11 +99,11 @@ func init() {
   archiveAndPublishCmd.Flag("noPublish", "Don't publish the archive to S3, just create it.").Default("true").BoolVar(&publishArchiveArg)
   archiveAndPublishCmd.Flag("noRcon", "Don't try to use the RCON connection on the server to start/stop saving.  UNSAFE").Default("true").BoolVar(&useRconArg)
   archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").StringVar(&rconPortArg)
-  archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPassword)
+  archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPasswordArg)
   archiveAndPublishCmd.Flag("archive-directory","Where the server data is located.").Default(".").StringVar(&archiveDirectoryArg)
   archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
-  archiveAndPublishCmd.Arg("user", "Name of user of the server were achiving.").Required().StringVar(&userArg)
-  archiveAndPublishCmd.Arg("server-name", "Name of the server were archiving.").Default("TestServer").StringVar(&serverNameArg)
+  archiveAndPublishCmd.Arg("user", "Name of user of the server were achiving.").StringVar(&userArg)
+  archiveAndPublishCmd.Arg("server-name", "Name of the server were archiving.").StringVar(&serverNameArg)
 
   kingpin.CommandLine.Help = "A command-line minecraft config tool."
 }
@@ -113,15 +113,20 @@ func main() {
 
   configureLogs()
 
-  // Get the default session
 
+  // Get the default session
   var sess *session.Session
   var err error
+
+
+  //
+  // Configure AWS for acrhive.
+  //
 
   // Note: We rely on NewSession to accomdate general defaults,
   // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
   f := logrus.Fields{"profile": awsProfileArg, "region": awsRegionArg,}
-  _ = "breakpoint"
+
   if awsProfileArg == "" {
     log.Debug(f, "Getting AWS session with NewSession() and defaults.")
     sess, err = session.NewSession()
@@ -135,25 +140,42 @@ func main() {
       "Can't get aws configuration information for session.", err)
   }
 
-  // sess.Config.Region = aws.String("us-west-1")
-  // if awsConfig.Region == nil || *awsConfig.Region == "" {
-  //   log.Debug(logrus.Fields{"region-arg": awsRegionArg,}, "Setting region")
-  //   if awsRegionArg == "" {
-  //     awsConfig.Region = &DEFAULT_REGION
-  //   } else {
-  //     awsConfig.Region = aws.String(awsRegionArg)
-  //   }
-  // } else {
-  //   log.Debug(logrus.Fields{"config-region": *awsConfig.Region,}, "Using default region")
-  // }
-
   accountAliases, err := awslib.GetAccountAliases(sess.Config)
   if err == nil {
     log.Debug(logrus.Fields{"account": *accountAliases[0], "region": *sess.Config.Region}, "craft-config startup.")
   }
 
+  // Command line args trump the environment.
+  userName := userArg
+  serverName := serverNameArg
+  archiveBucketName := bucketNameArg
+  if userArg == "" && serverNameArg == "" { // get them from the env
+    // TODO: THESE ARE ACTUALLY DEFINED IN ecs-craft. The clearly need
+    // to be moved somewhere else, probably mclib.
+    ServerUserKey := "SERVER_USER"
+    ServerNameKey := "SERVER_NAME"
+    ArchiveBucketKey := "ARCHIVE_BUCKET"
+    if u := os.Getenv(ServerUserKey); u != "" {
+      userName = u
+    }
+    if s := os.Getenv(ServerNameKey); s != "" {
+      serverName = s
+    }
+    if b := os.Getenv(ArchiveBucketKey); b != "" {
+      archiveBucketName = b
+    }
+  }
+  log.Debug(logrus.Fields{
+    "userName": userName, 
+    "serverName": serverName, 
+    "bucketName": archiveBucketName,
+  }, "Got user, server and bucket names.")
+
   // List of commands as parsed matched against functions to execute the commands.
-  commandMap := map[string]func(*session.Session) {
+  server := mclib.NewServer(userName, serverName, 
+    serverIpArg, rconPortArg, rconPasswordArg, archiveBucketName, archiveDirectoryArg, sess)
+
+  commandMap := map[string]func(*mclib.Server) {
     listServerConfig.FullCommand(): doListServerConfig,
     modifyServerConfig.FullCommand(): doModifyServerConfig,
     archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
@@ -163,7 +185,7 @@ func main() {
   if interactiveCmd.FullCommand() == command {
     interactive.DoInteractive(sess)
   } else {
-    commandMap[command](sess)
+    commandMap[command](server)
   }
 }
 
@@ -172,12 +194,12 @@ func main() {
 // Command Implementations
 //
 
-func doListServerConfig(*session.Session) {
+func doListServerConfig(*mclib.Server) {
   serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   serverConfig.List()
 }
 
-func doModifyServerConfig(*session.Session) {
+func doModifyServerConfig(*mclib.Server) {
   serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
   for k, v := range keyValueMap {
     if verbose {fmt.Printf("Modifying: \"%s\" = \"%s\"\n", k, v)}
@@ -190,10 +212,10 @@ func doModifyServerConfig(*session.Session) {
   }
 }
 
-func doArchiveAndPublish(sess *session.Session) {
+func doArchiveAndPublish(server *mclib.Server) {
+  // server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, sess)
   retries := 10
   waitTime := 5 * time.Second
-  server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, sess)
   server.NewRconWithRetry(retries, waitTime)
   if continuousArchiveArg {
     continuousArchiveAndPublish(server)
