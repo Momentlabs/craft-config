@@ -312,6 +312,9 @@ func archiveAndPublish(s *mclib.Server) {
 //   }
 // }
 
+func bogusTest (string) {
+  return "hello"
+}
 
 func configureLogs() {
   setFormatter()
