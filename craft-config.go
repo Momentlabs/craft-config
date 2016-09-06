@@ -21,11 +21,7 @@ import (
   "github.com/jdrivas/mclib"
 )
 
-// Log formats.
-const (
-  jsonLog = "json"
-  textLog = "text"
-)
+
 
 var (
   DEFAULT_REGION = "us-west-1"
@@ -43,6 +39,8 @@ var (
   // Prompt for Commands
   interactiveCmd                       *kingpin.CmdClause
 
+  queryCmd                      *kingpin.CmdClause
+  queryArg                   []string
   serverConfig                      *kingpin.CmdClause
   listServerConfig                  *kingpin.CmdClause
   serverConfigFileName              string
@@ -82,6 +80,11 @@ func init() {
   app.Flag("profile", "AWS profile for configuration.").StringVar(&awsProfileArg)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
+
+  queryCmd = app.Command("query", "Issues a command to the RCON port of a server.")
+  queryCmd.Arg("query-command", "command string to the server.").Required().StringsVar(&queryArg)
+  queryCmd.Flag("server-ip", "IP address of server to connect with.").Default("127.0.0.1").StringVar(&serverIpArg)
+  queryCmd.Flag("rcon-pw", "Password for rcon").Default("testing").StringVar(&rconPasswordArg)
 
   serverConfig = app.Command("server-config", "Manage a server config.")
 
@@ -171,28 +174,57 @@ func main() {
     "bucketName": archiveBucketName,
   }, "Got user, server and bucket names.")
 
+  // TODO: This has to change ....
+  serverPort := int64(25565)
+  rconPort := "25575"
+  if rconPortArg != "" {
+    rconPort = rconPortArg
+  }
+
   // List of commands as parsed matched against functions to execute the commands.
   server := mclib.NewServer(userName, serverName, 
-    serverIpArg, rconPortArg, rconPasswordArg, archiveBucketName, archiveDirectoryArg, sess)
+    serverIpArg, serverPort, rconPort, rconPasswordArg, archiveBucketName, archiveDirectoryArg, sess)
 
   commandMap := map[string]func(*mclib.Server) {
     listServerConfig.FullCommand(): doListServerConfig,
     modifyServerConfig.FullCommand(): doModifyServerConfig,
     archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
+    queryCmd.FullCommand(): doQuery,
   }
 
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
+    // TODO: send along a server to the interactive UI as well.
     interactive.DoInteractive(sess)
   } else {
     commandMap[command](server)
   }
 }
 
-
 //
 // Command Implementations
 //
+
+
+func doQuery(server *mclib.Server) {
+  q := ""
+  for _, e := range queryArg {
+    q += e + " "
+  }
+
+  rc, err  := server.NewRcon()
+  if err != nil {
+    fmt.Printf("Error getting rcon connection to server: %s.\n", err)
+  return
+  }
+
+  reply, err := rc.List()
+  if err ==  nil {
+    fmt.Printf("%s\n", reply)
+  } else {
+    fmt.Printf("Error with server command: %s.\n", err)
+  }
+}
 
 func doListServerConfig(*mclib.Server) {
   serverConfig := mclib.NewConfigFromFile(serverConfigFileName)
@@ -211,6 +243,7 @@ func doModifyServerConfig(*mclib.Server) {
     }
   }
 }
+
 
 func doArchiveAndPublish(server *mclib.Server) {
   // server := mclib.NewServer(userArg, serverNameArg, serverIpArg, rconPortArg, rconPassword, bucketNameArg, archiveDirectoryArg, sess)
@@ -285,11 +318,16 @@ func configureLogs() {
   updateLogLevel()
 }
 
-  // TODO: Clearly this should set a *formatter in the switch
-  // and then set each of the loggers to that formater.
-  // The foramtters are of different types though, and 
-  // lorgus.Formatter is an interface so I can't create a 
-  // var out of it. I konw there is a way, I just don't know what it is.func setFormatter() {
+// TODO: Clearly this should set a *formatter in the switch
+// and then set each of the loggers to that formater.
+// The foramtters are of different types though, and 
+// lorgus.Formatter is an interface so I can't create a 
+// var out of it. I konw there is a way, I just don't know what it is.func setFormatter() {
+// Log formats.
+const (
+  jsonLog = "json"
+  textLog = "text"
+)
 func setFormatter() {
   switch logsFormatArg {
   case jsonLog:
