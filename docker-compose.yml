@@ -1,0 +1,9 @@
+craft-config-builder:
+  volumes:
+    - ${GOPATH}/src/craft-config:/go/src/craft-config
+
+  image: craft-config-builder
+  container_name: craft-config-builder
+  environment: 
+    - GOOS=linux
+    - GOARCH=amd64

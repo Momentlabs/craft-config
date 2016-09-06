@@ -11,7 +11,8 @@ import (
   "github.com/alecthomas/kingpin"
   // "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
-  "github.com/bobappleyard/readline"
+  // "github.com/bobappleyard/readline"
+  "github.com/chzyer/readline"
   "github.com/fsnotify/fsnotify"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
@@ -410,7 +411,7 @@ func doQuit() (error) {
 func promptLoop(prompt string, process func(string) (error)) (err error) {
   errStr := "Error - %s.\n"
   for moreCommands := true; moreCommands; {
-    line, err := readline.String(prompt)
+    line, err := readline.Line(prompt)
     if err == io.EOF {
       moreCommands = false
     } else if err != nil {
