@@ -312,7 +312,7 @@ func archiveAndPublish(s *mclib.Server) {
 //   }
 // }
 
-func bogusTest (string) {
+func bogusTest() (string) {
   return "hello"
 }
 
