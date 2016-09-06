@@ -1,3 +1,4 @@
+craft-config
 build/
 node_modules/
 *.cfg
