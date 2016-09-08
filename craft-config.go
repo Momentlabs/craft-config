@@ -37,10 +37,11 @@ var (
   logsFormatArg                     string
 
   // Prompt for Commands
-  interactiveCmd                       *kingpin.CmdClause
+  interactiveCmd                    *kingpin.CmdClause
 
-  queryCmd                      *kingpin.CmdClause
-  queryArg                   []string
+  versionCmd                        *kingpin.CmdClause
+  queryCmd                          *kingpin.CmdClause
+  queryArg                          []string
   serverConfig                      *kingpin.CmdClause
   listServerConfig                  *kingpin.CmdClause
   serverConfigFileName              string
@@ -62,6 +63,8 @@ var (
 
   log = sl.New()
   sess *session.Session
+
+ 
 )
 
 
@@ -80,6 +83,8 @@ func init() {
   app.Flag("profile", "AWS profile for configuration.").StringVar(&awsProfileArg)
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
+
+  versionCmd = app.Command("version", "Print applicaton version.")
 
   queryCmd = app.Command("query", "Issues a command to the RCON port of a server.")
   queryCmd.Arg("query-command", "command string to the server.").Required().StringsVar(&queryArg)
@@ -109,6 +114,7 @@ func init() {
   archiveAndPublishCmd.Arg("server-name", "Name of the server were archiving.").StringVar(&serverNameArg)
 
   kingpin.CommandLine.Help = "A command-line minecraft config tool."
+
 }
 
 func main() {
@@ -116,11 +122,9 @@ func main() {
 
   configureLogs()
 
-
   // Get the default session
   var sess *session.Session
   var err error
-
 
   //
   // Configure AWS for acrhive.
@@ -190,6 +194,7 @@ func main() {
     modifyServerConfig.FullCommand(): doModifyServerConfig,
     archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
     queryCmd.FullCommand(): doQuery,
+    versionCmd.FullCommand(): doPrintVersion,
   }
 
   // Execute the command.
@@ -315,6 +320,7 @@ func archiveAndPublish(s *mclib.Server) {
 func bogusTest() (string) {
   return "hello"
 }
+
 
 func configureLogs() {
   setFormatter()

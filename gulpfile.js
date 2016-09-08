@@ -5,6 +5,7 @@ var run = require('gulp-run');
 var chalk = require('chalk')
 var util = require('gulp-util')
 var readline = require('readline')
+var git = require("gulp-git")
 
 var gulpProcess;
 var verbose = true;
@@ -36,8 +37,17 @@ gulp.task('test', function() {
   return test
 })
 
+
 gulp.task('build', function() {
-  build = child.spawnSync("go", ["install"])
+
+  var now = Math.round(new Date() / 1000);
+  var timeStampFlag  = "-X main.unixtime=" + now;
+  var gitHash = child.spawnSync("git", ["rev-parse", "HEAD"]).stdout.toString()
+  var gitHashFlag = "-X main.githash="  + gitHash;
+  var environFlag = "-X main.environ=" + "development";
+
+  var ldFlags = "-ldflags=" + timeStampFlag + " " + environFlag + " " + gitHashFlag
+  build = child.spawnSync("go", ["install", ldFlags]);
   if(build.status == 0) {
     util.log(chalk.white.bgBlue.bold(' Go Install Successful '));
   } else {

@@ -18,6 +18,7 @@
     "gulp-prompt": "",
     "gulp-run": "",
     "gulp-util": "",
+    "gulp-git": "",
     "console-stream": "",
     "chalk": "",
     "synchro-prompt": ""
