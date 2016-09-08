@@ -7,14 +7,15 @@ import (
   "github.com/jdrivas/mclib"  
 )
 
-// Version
-// These will get set by ldFlags during the build.
-var (
-  // buildstamp string
-  githash string
-  environ string
-  unixtime string
+//
+// Change the version number here.
+//
+const(
+  major = 0
+  minor = 0
+  dot = 2
 )
+
 
 type  AppVersion struct {
     major int
@@ -25,6 +26,14 @@ type  AppVersion struct {
     buildStamp time.Time
 }
 
+// These will get set by ldFlags during the build.
+var (
+  // buildstamp string
+  githash string
+  environ string
+  unixtime string
+)
+
 var Version AppVersion
 func init() {
   ut, err := strconv.ParseInt(unixtime, 10, 64)
@@ -33,9 +42,9 @@ func init() {
   }
   buildTime := time.Unix(ut, 0)
   Version = AppVersion{
-    major: 0,
-    minor: 0,
-    dot: 1,
+    major: major,
+    minor: minor,
+    dot: dot,
     githash: githash,
     environ: environ,
     buildStamp: buildTime,
