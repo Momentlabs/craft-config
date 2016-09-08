@@ -6,6 +6,7 @@ import (
   "os"
   "time"
   "craft-config/interactive"
+  "craft-config/version"
   // "craft-config/minecraft"
   // "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
@@ -75,7 +76,6 @@ func init() {
   app = kingpin.New("craft-config.go", "Command line to to manage minecraft server state.")
   app.Flag("verbose", "Describe what is happening, as it happens.").BoolVar(&verbose)
   app.Flag("debug", "Set logging level to debug: lots of logging.").BoolVar(&debug)
-
   app.Flag("log-format", "Choose text or json output.").Default(jsonLog).EnumVar(&logsFormatArg, jsonLog, textLog)
 
   // app.Flag("aws-config", "Configuration file location.").StringVar(&awsConfigFileArg)
@@ -84,8 +84,7 @@ func init() {
 
   interactiveCmd = app.Command("interactive", "Prompt for commands.")
 
-  versionCmd = app.Command("version", "Print applicaton version.")
-
+  versionCmd = app.Command("version", "Print the version and exit.")
   queryCmd = app.Command("query", "Issues a command to the RCON port of a server.")
   queryCmd.Arg("query-command", "command string to the server.").Required().StringsVar(&queryArg)
   queryCmd.Flag("server-ip", "IP address of server to connect with.").Default("127.0.0.1").StringVar(&serverIpArg)
@@ -119,6 +118,10 @@ func init() {
 
 func main() {
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
+  if command == versionCmd.FullCommand() {
+    fmt.Println(version.Version)
+    os.Exit(0)
+  }
 
   configureLogs()
 
@@ -194,7 +197,6 @@ func main() {
     modifyServerConfig.FullCommand(): doModifyServerConfig,
     archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
     queryCmd.FullCommand(): doQuery,
-    versionCmd.FullCommand(): doPrintVersion,
   }
 
   // Execute the command.
@@ -209,7 +211,6 @@ func main() {
 //
 // Command Implementations
 //
-
 
 func doQuery(server *mclib.Server) {
   q := ""

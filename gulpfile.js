@@ -41,10 +41,10 @@ gulp.task('test', function() {
 gulp.task('build', function() {
 
   var now = Math.round(new Date() / 1000);
-  var timeStampFlag  = "-X main.unixtime=" + now;
+  var timeStampFlag  = "-X craft-config/version.unixtime=" + now;
   var gitHash = child.spawnSync("git", ["rev-parse", "HEAD"]).stdout.toString()
-  var gitHashFlag = "-X main.githash="  + gitHash;
-  var environFlag = "-X main.environ=" + "development";
+  var gitHashFlag = "-X craft-config/version.githash="  + gitHash;
+  var environFlag = "-X craft-config/version.environ=" + "dev";
 
   var ldFlags = "-ldflags=" + timeStampFlag + " " + environFlag + " " + gitHashFlag
   build = child.spawnSync("go", ["install", ldFlags]);

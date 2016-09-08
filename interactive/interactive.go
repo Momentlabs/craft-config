@@ -6,7 +6,7 @@ import (
   "io"
   "os"
   "strings"
-  // "craft-config/minecraft"
+  "craft-config/version"
   "path/filepath"
   "github.com/alecthomas/kingpin"
   // "github.com/aws/aws-sdk-go/aws"
@@ -29,6 +29,7 @@ var (
   exitCmd *kingpin.CmdClause
   quitCmd *kingpin.CmdClause
   verboseCmd *kingpin.CmdClause
+  versionCmd *kingpin.CmdClause
   logFormatCmd *kingpin.CmdClause
   verbose bool
   logFormatArg string
@@ -91,6 +92,7 @@ func init() {
 
   // state
   rconCmd = app.Command("rcon", "toggle rcon use.")
+  versionCmd = app.Command("version", "Print out verison.")
   verboseCmd = app.Command("verbose", "toggle verbose mode.")
   debugCmd = app.Command("debug", "toggle the debug reporting.")
   exitCmd = app.Command("exit", "exit the program. <ctrl-D> works too.")
@@ -154,6 +156,7 @@ func doICommand(line string, sess *session.Session) (err error) {
   } else {
     switch command {
       case verboseCmd.FullCommand(): err = doVerbose()
+      case versionCmd.FullCommand(): err = doVersion()
       case debugCmd.FullCommand(): err = doDebug()
       case logFormatCmd.FullCommand(): err = doLogFormat()
       case exitCmd.FullCommand(): err = doQuit()
@@ -317,6 +320,11 @@ func doRcon() (error) {
   } else {
     fmt.Println("Rcon is turned on.")
   }
+  return nil
+}
+
+func doVersion() (error) {
+  fmt.Println(version.Version)
   return nil
 }
 
