@@ -1,0 +1,15 @@
+version: '2'
+services: 
+  craft-config-builder:
+    build:
+      context: .
+      dockerfile: dockerfile
+    volumes:
+      - ${GOPATH}/src:/go/src
+
+  # images:  033441544097.dkr.ecr.us-east-1.amazonaws.com/craft-config-builder
+    image:  craft-config-builder
+    container_name: craft-config-builder
+    environment:
+      - GOOS=linux
+      - GOARCH=amd64
