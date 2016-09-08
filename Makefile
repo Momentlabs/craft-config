@@ -1,19 +1,33 @@
 repo := craft-config-builder
 aws_profile = momentlabs
 
-login := $(shell aws --output text ecr get-login --profile $(aws_profile) --region us-east-1)
-token := $(shell echo $(login)| awk '{print $$6}')
+prog := craft-config
+release_dir := release
+release_artifacts := $(release_dir)/$(prog)_darwin_amd64 $(release_dir)/$(prog)_linux_amd64
 
-local:
-	@echo building local image: $(repo)
-	docker build -t $(repo) .
+help:
+	@echo make new-release version=v0.0.2 description="This is an early release." \# creates a release on github.
+	@echo make release-publish verion=v0.0.2 \# pushes the binaries to the github release.
 
-deploy-build-container:
-	@echo Bulding and pushing repository repository: $(repo)
-	@docker login -u AWS -p $(token) https://033441544097.dkr.ecr.us-east-1.amazonaws.com
-	docker build -t $(repo) .
-	docker tag $(repo):latest 033441544097.dkr.ecr.us-east-1.amazonaws.com/$(repo):latest
-	docker push 033441544097.dkr.ecr.us-east-1.amazonaws.com/$(repo):latest
+# Only define these variables for the release build.
+release-build: now := $(shell date +%s)
+release-build: timeflag := -X main.unixtime=$(now)
+release-build: hash := $(shell git rev-parse HEAD)
+release-build: hashflag := -X main.githash=$(hash)
+release-build: env := production
+release-build: envflag := -X main.environ=$(env)
+release-build: ld_args := $(envflag) $(hasflag) $(timeflag)
+
 
 release-build:
-	docker-compose up
+	GOOS=linux GOARC=amd64 go build "-ldflags=$(ld_args)" -o $(release_dir)/$(prog)_linux_amd64
+	GOOS=darwin GOARC=amd64 go build "-ldflags=$(ld_args)" -o $(release_dir)/$(prog)_darwin_amd64
+
+new-release:
+	@echo creating release on github, version: ${version}: $(description)
+	github-release release -u Momentlabs -r craft-config -t ${version} -d "${description}"
+
+release-publish: $(release_artifacts)
+	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f build/bin/craft-config_linux_amd64
+	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f build/bin/craft-config_darwin_amd64
+
