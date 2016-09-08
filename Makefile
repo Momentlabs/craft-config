@@ -3,9 +3,10 @@ aws_profile = momentlabs
 
 prog := craft-config
 release_dir := release
-release_artifacts := $(release_dir)/$(prog)_darwin_amd64 $(release_dir)/$(prog)_linux_amd64
+binaries := $(release_dir)/$(prog)_darwin_amd64 $(release_dir)/$(prog)_linux_amd64
 
 help:
+	@echo make release-build \# Creates the binaries: $(binaries)
 	@echo make new-release version=v0.0.2 description="This is an early release." \# creates a release on github.
 	@echo make release-publish verion=v0.0.2 \# pushes the binaries to the github release.
 
@@ -18,16 +19,19 @@ release-build: env := production
 release-build: envflag := -X main.environ=$(env)
 release-build: ld_args := $(envflag) $(hasflag) $(timeflag)
 
-
-release-build:
-	GOOS=linux GOARC=amd64 go build "-ldflags=$(ld_args)" -o $(release_dir)/$(prog)_linux_amd64
+$(release_dir)/$(prog)_darwin_amd64 : 
 	GOOS=darwin GOARC=amd64 go build "-ldflags=$(ld_args)" -o $(release_dir)/$(prog)_darwin_amd64
+
+$(release_dir)/$(prog)_linux_amd64 : 
+	GOOS=linux GOARC=amd64 go build "-ldflags=$(ld_args)" -o $(release_dir)/$(prog)_linux_amd64
+
+release-build: $(binaries)
 
 new-release:
 	@echo creating release on github, version: ${version}: $(description)
 	github-release release -u Momentlabs -r craft-config -t ${version} -d "${description}"
 
-release-publish: $(release_artifacts)
+release-publish: release-build
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f build/bin/craft-config_linux_amd64
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f build/bin/craft-config_darwin_amd64
 
