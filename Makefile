@@ -40,6 +40,8 @@ linux_build : $(linux_target)
 release-build: $(builds)
 
 # TODO: Consider doing some git tagging and building in a file for description.
+# TODO: Note that this doesn't guarantee tha the source in the repo and the binary
+# match. It relies on there already being a git commit and push.
 new-release: clean release-build
 	@echo creating release on github, version: ${version}: $(description)
 	github-release release -u Momentlabs -r craft-config -t ${version} -d "${description}"
