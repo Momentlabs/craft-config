@@ -35,7 +35,7 @@ darwin_build : $(darwin_target)
 
 # This is a docker build to get a linux target because of golang cgo dependency in os.user
 linux_build : $(linux_target)
-	docker-compose up
+	docker-compose --force-recreate up
 
 release-build: $(builds)
 
