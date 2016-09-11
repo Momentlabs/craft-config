@@ -6,6 +6,7 @@ import (
   "io"
   "os"
   "strings"
+  "strconv"
   "craft-config/version"
   "path/filepath"
   "github.com/alecthomas/kingpin"
@@ -14,11 +15,16 @@ import (
   // "github.com/bobappleyard/readline"
   "github.com/chzyer/readline"
   "github.com/fsnotify/fsnotify"
+  "github.com/mgutz/ansi"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 
   // "github.com/jdrivas/awslib"
   "github.com/jdrivas/mclib"
+)
+
+const(
+  defaultServerIp = "127.0.0.1"
 )
 
 var (
@@ -36,12 +42,19 @@ var (
   debugCmd *kingpin.CmdClause
   debug bool
 
+  queryCmd *kingpin.CmdClause
+  queryCommandArg string
+
   rcon *mclib.Rcon
   rconCmd *kingpin.CmdClause
   serverIpArg string
   rconPortArg string
-  rconPassword string
+  rconPasswordArg string
   noRcon bool
+
+  // some variables that maintain state between command invoations
+  // This requires login down in DoICommand()
+  currentServerIp = defaultServerIp
 
   // Read a configuration file in the current config
   currentServerConfigFileNameArg string
@@ -76,13 +89,31 @@ var (
   watchEventsStartCmd *kingpin.CmdClause
   watchEventsStopCmd *kingpin.CmdClause
 
-  log = sl.New()
-
-
   // event Watcher control.
   watchDone chan bool
   watcher *fsnotify.Watcher
 
+  log = sl.New()
+
+)
+
+
+var (
+  nullColor = fmt.Sprintf("%s", "\x00\x00\x00\x00\x00\x00\x00")
+  defaultColor = fmt.Sprintf("%s%s", "\x00\x00", ansi.ColorCode("default"))
+  defaultShortColor = fmt.Sprintf("%s", ansi.ColorCode("default"))
+
+  emphBlueColor = fmt.Sprintf(ansi.ColorCode("blue+b"))
+  emphRedColor = fmt.Sprintf(ansi.ColorCode("red+b"))
+  emphColor = emphBlueColor
+
+  titleColor = fmt.Sprintf(ansi.ColorCode("default+b"))
+  titleEmph = emphBlueColor
+  infoColor = emphBlueColor
+  successColor = fmt.Sprintf(ansi.ColorCode("green+b"))
+  warnColor = fmt.Sprintf(ansi.ColorCode("yellow+b"))
+  failColor = emphRedColor
+  resetColor = fmt.Sprintf(ansi.ColorCode("reset"))
 )
 
 func init() {
@@ -100,6 +131,12 @@ func init() {
   logFormatCmd = app.Command("log", "set the log format")
   logFormatCmd.Arg("format", "What format should we use").Default(textLog).EnumVar(&logFormatArg, jsonLog, textLog)
 
+  // Query a server.
+  queryCmd = app.Command("query", "Use the rcon conneciton to query a running mc server.")
+  queryCmd.Arg("command", "Command to send to the server.").Default("list").StringVar(&queryCommandArg)
+  queryCmd.Flag("server-ip", "IP address or DNS name of the server.").Default(defaultServerIp).Action(setDefault).StringVar(&serverIpArg)
+  queryCmd.Flag("rcon-port", "Port the server is listening for RCON connection.").Default("25575").StringVar(&rconPortArg)
+  queryCmd.Flag("rcon-pw", "Password for the RCON connection.").Default("testing").StringVar(&rconPasswordArg)
 
   // Read and manipulate a configuration file.
   readServerConfigFileCmd = app.Command("read-config", "read a server config file in.")
@@ -114,19 +151,23 @@ func init() {
   setServerConfigValueCmd.Arg("key", "Key for the setting - must be already presetn int he configuration").Required().StringVar(&currentKeyArg)
   setServerConfigValueCmd.Arg("value", "Value for the setting.").Required().StringVar(&currentValueArg)
 
+  // Archive
   archiveCmd := app.Command("archive", "Context for managing archives.")
+
   archiveServerCmd = archiveCmd.Command("server", "Archive a server into a zip file.")
   archiveServerCmd.Flag("no-rcon","Don't try to connect to an RCON server for archiving. UNSAFE.").BoolVar(&noRcon)
   archiveServerCmd.Arg("server-directory", "Relative location of server.").Default("server").StringVar(&serverDirectoryNameArg)
   archiveServerCmd.Arg("archive-file", "Name of archive file to create.").Default("server.zip").StringVar(&archiveFileNameArg)
-  archiveServerCmd.Arg("server-ip", "Server IP or dns. Used to get an RCON connection.").Default("127.0.0.1").StringVar(&serverIpArg)
+  archiveServerCmd.Arg("server-ip", "Server IP or dns. Used to get an RCON connection.").Default(defaultServerIp).StringVar(&serverIpArg)
   archiveServerCmd.Arg("rcon-port", "Port on the server where RCON is listening.").Default("25575").StringVar(&rconPortArg)
-  archiveServerCmd.Arg("rcon-ps", "Password for rcon connection.").Default("testing").StringVar(&rconPassword)
+  archiveServerCmd.Arg("rcon-pw", "Password for rcon connection.").Default("testing").StringVar(&rconPasswordArg)
+
   archivePublishCmd = archiveCmd.Command("publish", "Publish and archive to S3.")
   archivePublishCmd.Arg("user", "User of archive.").Required().StringVar(&userNameArg)
   archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default("server.zip").StringVar(&archiveFileNameArg)
   archivePublishCmd.Arg("s3-bucket", "Name of S3 bucket to publish archive to.").Default("craft-config-test").StringVar(&bucketNameArg)
 
+  // Watch
   watchCmd = app.Command("watch", "Watch the file system.")
   watchEventsCmd = watchCmd.Command("events", "Print out events.")
   watchEventsStartCmd = watchEventsCmd.Command("start", "Start watching events.")
@@ -154,6 +195,7 @@ func doICommand(line string, sess *session.Session) (err error) {
     fmt.Printf("Command error: %s.\nType help for a list of commands.\n", err)
     return nil
   } else {
+    // TODO: probably better served with map. Functions can take a vararg of interface{}.
     switch command {
       case verboseCmd.FullCommand(): err = doVerbose()
       case versionCmd.FullCommand(): err = doVersion()
@@ -162,6 +204,7 @@ func doICommand(line string, sess *session.Session) (err error) {
       case exitCmd.FullCommand(): err = doQuit()
       case quitCmd.FullCommand(): err = doQuit()
       case rconCmd.FullCommand(): err = doRcon()
+      case queryCmd.FullCommand(): err = doQuery()
       case readServerConfigFileCmd.FullCommand(): err = doReadServerConfigFile()
       case printServerConfigCmd.FullCommand(): err = doPrintServerConfig()
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
@@ -176,6 +219,19 @@ func doICommand(line string, sess *session.Session) (err error) {
 }
 
 // Interactive Command processing
+
+func doQuery() (error) {
+  rcon, err := mclib.NewRcon(currentServerIp, rconPortArg, rconPasswordArg)    
+  if err != nil {return err}
+
+  resp, err := rcon.Send(queryCommandArg)
+  if err != nil {return err}
+  rs := strconv.Quote(resp)
+  fmt.Printf("%s%s:%s%s: %s\n", infoColor, currentServerIp, rconPortArg, resetColor, rs)
+
+  return nil
+}
+
 func doReadServerConfigFile() (error) {
   currentServerConfig = mclib.NewConfigFromFile(currentServerConfigFileNameArg)
   return nil
@@ -213,7 +269,7 @@ func doArchiveServer() (err error) {
     err = mclib.CreateServerArchive(serverDirectoryNameArg, archiveFileNameArg)
   } else {
     if !connected {
-      rcon, err = mclib.NewRcon(serverIpArg, rconPortArg, rconPassword)
+      rcon, err = mclib.NewRcon(serverIpArg, rconPortArg, rconPasswordArg)
       if err != nil { return fmt.Errorf("Can't open rcon connection to server %s:%s %s", serverIpArg, rconPortArg, err) }
     }
     err = mclib.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
@@ -299,6 +355,25 @@ func doWatchEventsStop() (error) {
 }
 
 // Interactive Mode support functions.
+
+func setDefault(pc *kingpin.ParseContext) (error) {
+
+  for _, pe := range pc.Elements {
+    c := pe.Clause
+    switch c.(type) {
+      // case *kingpin.CmdClause : fmt.Printf("CmdClause: %s\n", (c.(*kingpin.CmdClause)).Model().Name)
+      // case *kingpin.ArgClause : fmt.Printf("Argclause: %#v", c.(*kingpin.ArgClause))
+    case *kingpin.FlagClause : 
+      fc := c.(*kingpin.FlagClause)
+      if fc.Model().Name == "server-ip" {
+        currentServerIp = *pe.Value
+      }
+    }
+  }
+
+  return nil
+}
+
 func toggleNoRcon() bool {
   noRcon = !noRcon
   return noRcon
