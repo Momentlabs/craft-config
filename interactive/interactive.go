@@ -5,6 +5,7 @@ import (
   "fmt"
   "io"
   "os"
+  "regexp"
   "strings"
   "strconv"
   "craft-config/version"
@@ -12,7 +13,6 @@ import (
   "github.com/alecthomas/kingpin"
   // "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
-  // "github.com/bobappleyard/readline"
   "github.com/chzyer/readline"
   "github.com/fsnotify/fsnotify"
   "github.com/mgutz/ansi"
@@ -43,7 +43,7 @@ var (
   debug bool
 
   queryCmd *kingpin.CmdClause
-  queryCommandArg string
+  queryCommandArg []string
 
   rcon *mclib.Rcon
   rconCmd *kingpin.CmdClause
@@ -133,7 +133,7 @@ func init() {
 
   // Query a server.
   queryCmd = app.Command("query", "Use the rcon conneciton to query a running mc server.")
-  queryCmd.Arg("command", "Command to send to the server.").Default("list").StringVar(&queryCommandArg)
+  queryCmd.Arg("command", "Command to send to the server.").Default("list").StringsVar(&queryCommandArg)
   queryCmd.Flag("server-ip", "IP address or DNS name of the server.").Default(defaultServerIp).Action(setDefault).StringVar(&serverIpArg)
   queryCmd.Flag("rcon-port", "Port the server is listening for RCON connection.").Default("25575").StringVar(&rconPortArg)
   queryCmd.Flag("rcon-pw", "Password for the RCON connection.").Default("testing").StringVar(&rconPasswordArg)
@@ -224,12 +224,31 @@ func doQuery() (error) {
   rcon, err := mclib.NewRcon(currentServerIp, rconPortArg, rconPasswordArg)    
   if err != nil {return err}
 
-  resp, err := rcon.Send(queryCommandArg)
-  if err != nil {return err}
-  rs := strconv.Quote(resp)
-  fmt.Printf("%s%s:%s%s: %s\n", infoColor, currentServerIp, rconPortArg, resetColor, rs)
+  prompt := fmt.Sprintf("%s%s:%s%s: ", infoColor, currentServerIp, rconPortArg, resetColor)
+  err = promptLoop(prompt, func(line string) (error) {
+    if strings.Compare(line, "quit") == 0 || strings.Compare(line, "exit") == 0 {return io.EOF}
+    if strings.Compare(line, "stop") == 0 || strings.Compare(line, "end") == 0 {
+      return fmt.Errorf("Can't shutdown the server from here")
+    }
 
-  return nil
+    resp, err := rcon.Send(line)
+    if err != nil { return err }
+    if debug { 
+      rs := strconv.Quote(resp) 
+      fmt.Printf("%s%s:%s [RAW]%s: %s\n", infoColor, currentServerIp, rconPortArg, resetColor, rs)
+    }
+    fmt.Printf("%s\n", formatRconResp(resp))
+    return err
+  })
+
+  return err
+}
+
+// Takes the color coding out.
+func formatRconResp(r string) (s string) {
+  re := regexp.MustCompile("§.")
+  s = re.ReplaceAllString(r, "", )
+  return s
 }
 
 func doReadServerConfigFile() (error) {
