@@ -258,7 +258,19 @@ func doModifyServerConfig(*mclib.Server) {
 func doArchiveAndPublish(server *mclib.Server) {
   retries := rconRetriesArg
   waitTime := time.Duration(rconDelayArg) * time.Second
-  server.NewRconWithRetry(retries, waitTime)
+
+  if retries < 0  {
+    count := 0
+    for {
+      server.NewRconWithRetry(10, waitTime)
+      if server.HasRconConnection() {break}
+      count++
+      log.Debug(logrus.Fields{"retryOuterLoop": count,},"Continuing to try to connect to rcon.")
+    }
+  } else {
+      server.NewRconWithRetry(retries, waitTime)
+  }
+
   if continuousArchiveArg {
     continuousArchiveAndPublish(server)
   } else {
