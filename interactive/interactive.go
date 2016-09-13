@@ -25,6 +25,8 @@ import (
 
 const(
   defaultServerIp = "127.0.0.1"
+  defaultRconPort = "25575"
+  defaultRconAddr = defaultServerIp + ":" + defaultRconPort
 )
 
 var (
@@ -48,6 +50,7 @@ var (
   rcon *mclib.Rcon
   rconCmd *kingpin.CmdClause
   serverIpArg string
+  rconAddrArg string
   rconPortArg string
   rconPasswordArg string
   noRcon bool
@@ -55,6 +58,7 @@ var (
   // some variables that maintain state between command invoations
   // This requires login down in DoICommand()
   currentServerIp = defaultServerIp
+  currentRconPort = defaultRconPort
 
   // Read a configuration file in the current config
   currentServerConfigFileNameArg string
@@ -133,7 +137,7 @@ func init() {
 
   // Query a server.
   queryCmd = app.Command("query", "Use the rcon conneciton to query a running mc server.")
-  queryCmd.Arg("command", "Command to send to the server.").Default("list").StringsVar(&queryCommandArg)
+  queryCmd.Arg("rcon-address", "IP or DNS address for the rcon port of a server: minecraft:25575 or 172.31.55.58:25575").Default(defaultRconAddr).Action(setDefault).StringVar(&rconAddrArg)
   queryCmd.Flag("server-ip", "IP address or DNS name of the server.").Default(defaultServerIp).Action(setDefault).StringVar(&serverIpArg)
   queryCmd.Flag("rcon-port", "Port the server is listening for RCON connection.").Default("25575").StringVar(&rconPortArg)
   queryCmd.Flag("rcon-pw", "Password for the RCON connection.").Default("testing").StringVar(&rconPasswordArg)
@@ -221,10 +225,10 @@ func doICommand(line string, sess *session.Session) (err error) {
 // Interactive Command processing
 
 func doQuery() (error) {
-  rcon, err := mclib.NewRcon(currentServerIp, rconPortArg, rconPasswordArg)    
+  rcon, err := mclib.NewRcon(currentServerIp, currentRconPort, rconPasswordArg)    
   if err != nil {return err}
 
-  prompt := fmt.Sprintf("%s%s:%s%s: ", infoColor, currentServerIp, rconPortArg, resetColor)
+  prompt := fmt.Sprintf("%s%s:%s%s: ", infoColor, currentServerIp, currentRconPort, resetColor)
   err = promptLoop(prompt, func(line string) (error) {
     if strings.Compare(line, "quit") == 0 || strings.Compare(line, "exit") == 0 {return io.EOF}
     if strings.Compare(line, "stop") == 0 || strings.Compare(line, "end") == 0 {
@@ -235,7 +239,7 @@ func doQuery() (error) {
     if err != nil { return err }
     if debug { 
       rs := strconv.Quote(resp) 
-      fmt.Printf("%s%s:%s [RAW]%s: %s\n", infoColor, currentServerIp, rconPortArg, resetColor, rs)
+      fmt.Printf("%s%s:%s [RAW]%s: %s\n", infoColor, currentServerIp, currentRconPort, resetColor, rs)
     }
     fmt.Printf("%s\n", formatRconResp(resp))
     return err
@@ -373,15 +377,32 @@ func doWatchEventsStop() (error) {
   return nil
 }
 
+//
 // Interactive Mode support functions.
+//
 
+
+// TODO: This variables for currentServerIP etc. are getting a little crufty.
+// this desparately needs some refactoring.
 func setDefault(pc *kingpin.ParseContext) (error) {
 
   for _, pe := range pc.Elements {
     c := pe.Clause
     switch c.(type) {
       // case *kingpin.CmdClause : fmt.Printf("CmdClause: %s\n", (c.(*kingpin.CmdClause)).Model().Name)
-      // case *kingpin.ArgClause : fmt.Printf("Argclause: %#v", c.(*kingpin.ArgClause))
+    case *kingpin.ArgClause : {
+      ac := c.(*kingpin.ArgClause)
+      if ac.Model().Name == "rcon-address" {
+        rconaddr := strings.Split(*pe.Value, ":")
+        ip := rconaddr[0]
+        port := defaultRconPort
+        if len(rconaddr) > 1 {
+          port = rconaddr[1]
+        }
+        currentServerIp = ip
+        currentRconPort = port
+      }
+    }
     case *kingpin.FlagClause : 
       fc := c.(*kingpin.FlagClause)
       if fc.Model().Name == "server-ip" {
