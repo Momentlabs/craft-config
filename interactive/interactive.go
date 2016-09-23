@@ -4,29 +4,34 @@ package interactive
 import (
   "fmt"
   "io"
-  "os"
-  "regexp"
   "strings"
   "strconv"
   "craft-config/version"
-  "path/filepath"
+  "craft-config/lib"
   "github.com/alecthomas/kingpin"
-  // "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
-  "github.com/chzyer/readline"
   "github.com/fsnotify/fsnotify"
-  "github.com/mgutz/ansi"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 
-  // "github.com/jdrivas/awslib"
-  "github.com/jdrivas/mclib"
+  "mclib"
+  // "github.com/jdrivas/mclib"
 )
 
 const(
   defaultServerIp = "127.0.0.1"
-  defaultRconPort = "25575"
-  defaultRconAddr = defaultServerIp + ":" + defaultRconPort
+  defaultPrivateIp = "127.0.0.1"
+  defaultServerPort = mclib.Port(25565)
+  defaultRconPort = mclib.Port(25575)
+  defaultRconAddr = defaultServerIp + ":25575"
+  defaultUser = "testuser"
+  defaeultServerName = "craft-config-test-server"
+  defaultArchiveBucket = "craft-config-test"
+  defaultArchiveFile = "server.zip"
+
+  defaultLogFormat = textLog
+
+  NoArchiveTypeArg = "NoTypeArg"
 )
 
 var (
@@ -40,7 +45,7 @@ var (
   versionCmd *kingpin.CmdClause
   logFormatCmd *kingpin.CmdClause
   verbose bool
-  logFormatArg string
+  logFormatArg = defaultLogFormat
   debugCmd *kingpin.CmdClause
   debug bool
 
@@ -82,10 +87,17 @@ var (
   archiveCmd *kingpin.CmdClause
   archiveServerCmd *kingpin.CmdClause
   archivePublishCmd *kingpin.CmdClause
+  archiveGetCmd *kingpin.CmdClause
+  archiveListCmd *kingpin.CmdClause
+
+  archiveURIArg string
+  archiveTypeArg string
   archiveFileNameArg string
+  archiveFilesArg []string = make([]string, 0)
   serverDirectoryNameArg string
   bucketNameArg string
   userNameArg string
+  serverNameArg string
 
   // Watch file-system.
   watchCmd *kingpin.CmdClause
@@ -102,24 +114,6 @@ var (
 )
 
 
-var (
-  nullColor = fmt.Sprintf("%s", "\x00\x00\x00\x00\x00\x00\x00")
-  defaultColor = fmt.Sprintf("%s%s", "\x00\x00", ansi.ColorCode("default"))
-  defaultShortColor = fmt.Sprintf("%s", ansi.ColorCode("default"))
-
-  emphBlueColor = fmt.Sprintf(ansi.ColorCode("blue+b"))
-  emphRedColor = fmt.Sprintf(ansi.ColorCode("red+b"))
-  emphColor = emphBlueColor
-
-  titleColor = fmt.Sprintf(ansi.ColorCode("default+b"))
-  titleEmph = emphBlueColor
-  infoColor = emphBlueColor
-  successColor = fmt.Sprintf(ansi.ColorCode("green+b"))
-  warnColor = fmt.Sprintf(ansi.ColorCode("yellow+b"))
-  failColor = emphRedColor
-  resetColor = fmt.Sprintf(ansi.ColorCode("reset"))
-)
-
 func init() {
   watchDone = make(chan bool)
 
@@ -133,7 +127,7 @@ func init() {
   exitCmd = app.Command("exit", "exit the program. <ctrl-D> works too.")
   quitCmd = app.Command("quit", "exit the program.")
   logFormatCmd = app.Command("log", "set the log format")
-  logFormatCmd.Arg("format", "What format should we use").Default(textLog).EnumVar(&logFormatArg, jsonLog, textLog)
+  logFormatCmd.Arg("format", "What format should we use").Default(defaultLogFormat).EnumVar(&logFormatArg, jsonLog, textLog)
 
   // Query a server.
   queryCmd = app.Command("query", "Use the rcon conneciton to query a running mc server.")
@@ -159,17 +153,31 @@ func init() {
   archiveCmd := app.Command("archive", "Context for managing archives.")
 
   archiveServerCmd = archiveCmd.Command("server", "Archive a server into a zip file.")
+  archiveServerCmd.Arg("type", "Server or World snapshot.").Required().StringVar(&archiveTypeArg)
+  archiveServerCmd.Arg("user", "Username for the server for archibing").Required().StringVar(&userNameArg)
+  archiveServerCmd.Arg("server", "Servername for the server for archibing").Required().StringVar(&serverNameArg)
+  archiveServerCmd.Arg("archive-files", "list of files to archive.").StringsVar(&archiveFilesArg)
+  archiveServerCmd.Flag("bucket", "Name of S3 bucket to publish archive to.").Default(defaultArchiveBucket).StringVar(&bucketNameArg)
+  archiveServerCmd.Flag("archive-file-name", "Name of archive (zip) file to create.").Default(defaultArchiveFile).StringVar(&archiveFileNameArg)
+  archiveServerCmd.Flag("server-dir", "Relative location of server.").Default(".").StringVar(&serverDirectoryNameArg)
+  archiveServerCmd.Flag("server-ip", "Server IP or dns. Used to get an RCON connection.").Default(defaultServerIp).StringVar(&serverIpArg)
+  archiveServerCmd.Flag("rcon-port", "Port on the server where RCON is listening.").Default("25575").StringVar(&rconPortArg)
+  archiveServerCmd.Flag("rcon-pw", "Password for rcon connection.").Default("testing").StringVar(&rconPasswordArg)
   archiveServerCmd.Flag("no-rcon","Don't try to connect to an RCON server for archiving. UNSAFE.").BoolVar(&noRcon)
-  archiveServerCmd.Arg("server-directory", "Relative location of server.").Default("server").StringVar(&serverDirectoryNameArg)
-  archiveServerCmd.Arg("archive-file", "Name of archive file to create.").Default("server.zip").StringVar(&archiveFileNameArg)
-  archiveServerCmd.Arg("server-ip", "Server IP or dns. Used to get an RCON connection.").Default(defaultServerIp).StringVar(&serverIpArg)
-  archiveServerCmd.Arg("rcon-port", "Port on the server where RCON is listening.").Default("25575").StringVar(&rconPortArg)
-  archiveServerCmd.Arg("rcon-pw", "Password for rcon connection.").Default("testing").StringVar(&rconPasswordArg)
 
-  archivePublishCmd = archiveCmd.Command("publish", "Publish and archive to S3.")
+  archivePublishCmd = archiveCmd.Command("publish", "Publish an archive to S3.")
   archivePublishCmd.Arg("user", "User of archive.").Required().StringVar(&userNameArg)
-  archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default("server.zip").StringVar(&archiveFileNameArg)
-  archivePublishCmd.Arg("s3-bucket", "Name of S3 bucket to publish archive to.").Default("craft-config-test").StringVar(&bucketNameArg)
+  archivePublishCmd.Arg("archive-file", "Name of archive file to pubilsh.").Default(defaultArchiveFile).StringVar(&archiveFileNameArg)
+  archivePublishCmd.Arg("bucket", "Name of S3 bucket to publish archive to.").Default(defaultArchiveBucket).StringVar(&bucketNameArg)
+
+  archiveGetCmd = archiveCmd.Command("get", "Retreive an archive from S3.")
+  archiveGetCmd.Arg("uri", "Fullly qualified URI for the archive.").Required().StringVar(&archiveURIArg)
+  // archiveListCmd.Arg("bucket", "Only list archives of this type.").Default(defaultArchiveBucket).StringVar(&bucketNameArg)
+
+  archiveListCmd = archiveCmd.Command("list", "List the archives in the bucket.")
+  archiveListCmd.Arg("user", "User name for the archives.").Required().StringVar(&userNameArg)
+  archiveListCmd.Arg("type", "Only list archives of this type.").Default(NoArchiveTypeArg).StringVar(&archiveTypeArg)
+  archiveListCmd.Arg("bucket", "Only list archives of this type.").Default(defaultArchiveBucket).StringVar(&bucketNameArg)
 
   // Watch
   watchCmd = app.Command("watch", "Watch the file system.")
@@ -183,8 +191,9 @@ func init() {
 
 func doICommand(line string, sess *session.Session) (err error) {
 
-  // This is due to a 'peculiarity' of kingpin: it collects strings as arguments across parses.
-  testString = []string{}
+  // Variables keep there values between parsings. This means that
+  // slices of strings just grow. We reset them here.
+  archiveFilesArg = []string{}
 
   // Prepare a line for parsing
   line = strings.TrimRight(line, "\n")
@@ -213,8 +222,10 @@ func doICommand(line string, sess *session.Session) (err error) {
       case printServerConfigCmd.FullCommand(): err = doPrintServerConfig()
       case writeServerConfigCmd.FullCommand(): err = doWriteServerConfig()
       case setServerConfigValueCmd.FullCommand(): err = doSetServerConfigValue()
-      case archiveServerCmd.FullCommand(): err = doArchiveServer()
+      case archiveServerCmd.FullCommand(): err = doArchiveServer(sess)
       case archivePublishCmd.FullCommand(): err = doPublishArchive(sess)
+      case archiveGetCmd.FullCommand(): err = doGetArchive(sess)
+      case archiveListCmd.FullCommand(): err = doListArchive(sess)
       case watchEventsStartCmd.FullCommand(): err = doWatchEventsStart()
       case watchEventsStopCmd.FullCommand(): err = doWatchEventsStop()
     }
@@ -222,165 +233,9 @@ func doICommand(line string, sess *session.Session) (err error) {
   return err
 }
 
-// Interactive Command processing
-
 func doQuery() (error) {
-  rcon, err := mclib.NewRcon(currentServerIp, currentRconPort, rconPasswordArg)    
-  if err != nil {return err}
-
-  prompt := fmt.Sprintf("%s%s:%s%s: ", infoColor, currentServerIp, currentRconPort, resetColor)
-  err = promptLoop(prompt, func(line string) (error) {
-    if strings.Compare(line, "quit") == 0 || strings.Compare(line, "exit") == 0 {return io.EOF}
-    if strings.Compare(line, "stop") == 0 || strings.Compare(line, "end") == 0 {
-      return fmt.Errorf("Can't shutdown the server from here")
-    }
-
-    resp, err := rcon.Send(line)
-    if err != nil { return err }
-    if debug { 
-      rs := strconv.Quote(resp) 
-      fmt.Printf("%s%s:%s [RAW]%s: %s\n", infoColor, currentServerIp, currentRconPort, resetColor, rs)
-    }
-    fmt.Printf("%s\n", formatRconResp(resp))
-    return err
-  })
-
-  return err
+  return lib.RconLoop(currentServerIp, currentRconPort, rconPasswordArg)
 }
-
-// Takes the color coding out.
-func formatRconResp(r string) (s string) {
-  re := regexp.MustCompile("§.")
-  s = re.ReplaceAllString(r, "", )
-  return s
-}
-
-func doReadServerConfigFile() (error) {
-  currentServerConfig = mclib.NewConfigFromFile(currentServerConfigFileNameArg)
-  return nil
-}
-
-func doPrintServerConfig() (error) {
-  currentServerConfig.List()
-  return nil
-}
-
-func doWriteServerConfig() (error) {
-  if verbose {
-    fmt.Printf("Writing out file: \"%s\"", newServerConfigFileNameArg)
-  }
-  currentServerConfig.WriteToFile(newServerConfigFileNameArg)
-  return nil
-}
-
-func doSetServerConfigValue() (error) {
-  currentServerConfig.SetEntry(currentKeyArg, currentValueArg)
-  return nil
-}
-
-func doArchiveServer() (err error) {
-
-  // This panics?
-  // connected := (rcon != nil) || rcon.HasConnection()
-  connected := false
-  if rcon != nil {
-    connected = rcon.HasConnection()
-  }
-
-  if noRcon {
-    log.Info(nil, "Archiving without stopping saves on the server (no RCON connection). This is unsafe.")
-    err = mclib.CreateServerArchive(serverDirectoryNameArg, archiveFileNameArg)
-  } else {
-    if !connected {
-      rcon, err = mclib.NewRcon(serverIpArg, rconPortArg, rconPasswordArg)
-      if err != nil { return fmt.Errorf("Can't open rcon connection to server %s:%s %s", serverIpArg, rconPortArg, err) }
-    }
-    err = mclib.ArchiveServer(rcon, serverDirectoryNameArg, archiveFileNameArg)
-  }
-  return err
-}
-
-func doPublishArchive(sess *session.Session) (error) {
-  resp, err := mclib.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, sess)
-  if err == nil {
-    fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
-  }
-  return err
-}
-
-
-// TODO: Either add a .craftignore file
-// or at least don't look at .git.
-func doWatchEventsStart() (err error) {
-  if watcher != nil { return fmt.Errorf("Watcher already being used.") }
-
-  watcher, err = fsnotify.NewWatcher()
-  if err != nil { return fmt.Errorf("Couldn't create a notifycation watcher: %s", err) }
-
-  go func() {
-    log.Info(nil, "Starting file watch.")
-    for {
-      select {
-      case event := <-watcher.Events:
-        log.Info(logrus.Fields{"event": event}, "File Event")
-        if event.Op & fsnotify.Create == fsnotify.Create { // If we add a dir, watch it.
-          file, err := os.Open(event.Name)
-          f := logrus.Fields{"file": event.Name}
-          if err != nil {log.Error(f, "Can't open new file.", err)}
-          fInfo, err := file.Stat()
-          if err != nil {log.Error(f, "Can't state new file.", err)}
-          if fInfo.IsDir() {
-            log.Info(f, "Adding directory to watch.")
-            watcher.Add(event.Name)
-          }
-        }
-      case err := <-watcher.Errors:
-        log.Error(nil, "File watch.", err)
-      case <-watchDone:
-        log.Info(nil, "Stopping file watch.")
-        return
-      } 
-    }
-  }()
-  addWatchTree(".", watcher)
-  return err
-}
-
-// add the directories starting at the base to a watcher.
-func addWatchTree(baseDir string, w *fsnotify.Watcher) (err error) {
-
-  f := logrus.Fields{ "watchDir": baseDir, "file": ""}
-  log.Debug(f, "Adding files to directory.")
-  err = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) (error) {
-    // fds["file"] = path
-    // ctx.Debug("Adding a file.")
-    f["file"] = path
-    log.Debug(f, "Adding a file.")
-    if err != nil { return err }
-    if info.IsDir() {
-      // log.Infof("Adding %s to watch list.", path)
-      err = w.Add(path)
-    }
-    return err
-  })
-  return err
-}
-
-func doWatchEventsStop() (error) {
-  if watcher == nil { return fmt.Errorf("No watcher to stop.")}
-  log.Debug(nil, "Shutting done the file watcher.")
-  watchDone <- true
-  log.Debug(nil, "Closing the watcher.")
-  watcher.Close()
-  watcher = nil
-  fmt.Printf("File watch stopped.\n")
-  return nil
-}
-
-//
-// Interactive Mode support functions.
-//
-
 
 // TODO: This variables for currentServerIP etc. are getting a little crufty.
 // this desparately needs some refactoring.
@@ -397,7 +252,9 @@ func setDefault(pc *kingpin.ParseContext) (error) {
         ip := rconaddr[0]
         port := defaultRconPort
         if len(rconaddr) > 1 {
-          port = rconaddr[1]
+          p, err := strconv.Atoi(rconaddr[1])
+          if err != nil { p = 0 }
+          port = mclib.Port(p)
         }
         currentServerIp = ip
         currentRconPort = port
@@ -480,82 +337,39 @@ const (
   cliLog = "cli"
 )
 
-// TODO: Clearly this should set a *logrus.Formatter in the switch
-// and then set each of the loggers to that formater.
-// The foramtters are of different types though, and 
-// lorgus.Formatter is an interface so I can't create a 
-// var out of it. I konw there is a way, I just 
-// don't know what it is.
 func setFormatter() {
+  var f logrus.Formatter
   switch logFormatArg {
-  case jsonLog:
-    f := new(logrus.JSONFormatter)
-    log.SetFormatter(f)
-    mclib.SetLogFormatter(f)
-  case textLog:
-    f := new(sl.TextFormatter)
-    f.FullTimestamp = true
-    log.SetFormatter(f)
-    mclib.SetLogFormatter(f)
-  default:
-    f := new(sl.TextFormatter)
-    f.FullTimestamp = true
-    log.SetFormatter(f)
-    mclib.SetLogFormatter(f)
+  case jsonLog: f = new(logrus.JSONFormatter)
+  case cliLog, textLog:
+    s := new(sl.TextFormatter)
+    s.FullTimestamp = true
+    f = logrus.Formatter(s)
   }
+  log.SetFormatter(f)
+  mclib.SetLogFormatter(f)
+  lib.SetLogFormatter(f)
 }
 
 func updateLogLevel() {
   l := logrus.InfoLevel
   if debug || verbose {
+    fmt.Printf("Setting debug LogLevel.\n")
     l = logrus.DebugLevel
   }
   log.SetLevel(l)
   mclib.SetLogLevel(l)
+  lib.SetLogLevel(l)
 }
-
-// func updateLogSettings() {
-//   logLevel := logrus.InfoLevel
-//   if verbose || debug {
-//     logLevel = logrus.DebugLevel
-//   }
-//   log.WithField("loglevel", logLevel).Info("Setting log level.")
-//   log.Level = logLevel
-//   mclib.SetLogLevel(logLevel)
-//   // log.Formatter = new(logrus.JSONFormatter)
-//   log.Formatter = new(sl.TextFormatter)
-//   logrus.SetLevel(logrus.DebugLevel)
-// }
 
 func doQuit() (error) {
   return io.EOF
 }
 
-func promptLoop(prompt string, process func(string) (error)) (err error) {
-  errStr := "Error - %s.\n"
-  for moreCommands := true; moreCommands; {
-    line, err := readline.Line(prompt)
-    if err == io.EOF {
-      moreCommands = false
-    } else if err != nil {
-      fmt.Printf(errStr, err)
-    } else {
-      readline.AddHistory(line)
-      err = process(line)
-      if err == io.EOF {
-        moreCommands = false
-      } else if err != nil {
-        fmt.Printf(errStr, err)
-      }
-    }
-  }
-  return nil
-}
-
 // This gets called from the main program, presumably from the 'interactive' command on main's command line.
 func DoInteractive(sess *session.Session) {
-  prompt := "> "
-  err := promptLoop(prompt, func(line string) (err error) {
+  prompt := "craft-config > "
+  err := lib.PromptLoop(prompt, func(line string) (err error) {
     return doICommand(line, sess)
   })
   if err != nil {fmt.Printf("Error - %s.\n", err)}

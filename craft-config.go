@@ -4,24 +4,18 @@ import (
   "fmt"
   "github.com/alecthomas/kingpin"
   "os"
-  "time"
   "craft-config/interactive"
+  "craft-config/lib"
   "craft-config/version"
-  // "craft-config/minecraft"
-  // "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 
-  // THIS IS FOR DEVELOPMENT PURPOSES AND
-  // WILL LIKELY CAUSE ME TROUBLE.
-  // PROBABLY BEST TO REMOVE THIS ONCE 
-  // THE LIBRARIES ARE STABLE.
-  // "mclib"
+  // "awslib"
   "github.com/jdrivas/awslib"
-  "github.com/jdrivas/mclib"
+  "mclib"
+  // "github.com/jdrivas/mclib"
 )
-
 
 
 var (
@@ -61,7 +55,7 @@ var (
   rconDelayArg                      int
   publishArchiveArg                 bool
   serverIpArg                       string
-  rconPortArg                       string
+  rconPortArg                       int64
   rconPasswordArg                   string
 
   log = sl.New()
@@ -107,7 +101,7 @@ func init() {
   archiveAndPublishCmd.Flag("server-ip", "IP address for the rcon server connection.").Default("127.0.0.1").StringVar(&serverIpArg)
   archiveAndPublishCmd.Flag("noPublish", "Don't publish the archive to S3, just create it.").Default("true").BoolVar(&publishArchiveArg)
   archiveAndPublishCmd.Flag("noRcon", "Don't try to use the RCON connection on the server to start/stop saving.  UNSAFE").Default("true").BoolVar(&useRconArg)
-  archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").StringVar(&rconPortArg)
+  archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").Int64Var(&rconPortArg)
   archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPasswordArg)
   archiveAndPublishCmd.Flag("rcon-retries", "Number of times to retry the connection before failure..").Default("20").IntVar(&rconRetriesArg)
   archiveAndPublishCmd.Flag("rcon-delay", "Number of seconds to wait between retries..").Default("5").IntVar(&rconDelayArg)
@@ -185,16 +179,29 @@ func main() {
     "bucketName": archiveBucketName,
   }, "Got user, server and bucket names.")
 
-  // TODO: This has to change ....
-  serverPort := int64(25565)
-  rconPort := "25575"
-  if rconPortArg != "" {
-    rconPort = rconPortArg
+  // TODO: need to use some kind of Action function on the args.
+  serverPort := mclib.Port(25565)
+  rconPort := mclib.Port(25575)
+  if rconPortArg != 0 {
+    rconPort = mclib.Port(rconPortArg)
   }
 
   // List of commands as parsed matched against functions to execute the commands.
-  server := mclib.NewServer(userName, serverName, 
-    serverIpArg, serverPort, rconPort, rconPasswordArg, archiveBucketName, archiveDirectoryArg, sess)
+  // TODO: ClusterName and PrivateIP are not filled in here. This is probably not a problem
+  // for current use ..... bad behaviour. Needs a fix, either command line or something else.
+  server := &mclib.Server{
+    User: userName,
+    Name: serverName,
+    // ClusterName: clusteNameArg,
+    PublicServerIp: serverIpArg,
+    // PrivateServerIp: 
+    ServerPort: mclib.Port(serverPort),
+    RconPort: mclib.Port(rconPort),
+    RconPassword: rconPasswordArg,
+    ArchiveBucket: archiveBucketName,
+    ServerDirectory: archiveDirectoryArg,
+    AWSSession: sess,
+  }
 
   commandMap := map[string]func(*mclib.Server) {
     listServerConfig.FullCommand(): doListServerConfig,
@@ -217,23 +224,7 @@ func main() {
 //
 
 func doQuery(server *mclib.Server) {
-  q := ""
-  for _, e := range queryArg {
-    q += e + " "
-  }
-
-  rc, err  := server.NewRcon()
-  if err != nil {
-    fmt.Printf("Error getting rcon connection to server: %s.\n", err)
-  return
-  }
-
-  reply, err := rc.List()
-  if err ==  nil {
-    fmt.Printf("%s\n", reply)
-  } else {
-    fmt.Printf("Error with server command: %s.\n", err)
-  }
+  lib.RconLoop(server.PublicServerIp, server.RconPort, server.RconPassword)
 }
 
 func doListServerConfig(*mclib.Server) {
@@ -254,117 +245,34 @@ func doModifyServerConfig(*mclib.Server) {
   }
 }
 
-
-func doArchiveAndPublish(server *mclib.Server) {
-  retries := rconRetriesArg
-  waitTime := time.Duration(rconDelayArg) * time.Second
-
-  if retries < 0  {
-    count := 0
-    for {
-      server.NewRconWithRetry(10, waitTime)
-      if server.HasRconConnection() {break}
-      count++
-      log.Debug(logrus.Fields{"retryOuterLoop": count,},"Continuing to try to connect to rcon.")
-    }
-  } else {
-      server.NewRconWithRetry(retries, waitTime)
-  }
-
-  if continuousArchiveArg {
-    continuousArchiveAndPublish(server)
-  } else {
-    archiveAndPublish(server)
-  }
-}
-
-// TODO: Set up some asynchronous go routines:
-// 1. Delay timer: every 5 mniutes or so, come along and do a backup if there are users (what we have now).
-// 2. File Watcher: check to see if non-world files have been created and update those.
-// 3. User Watcher: assuming the file watcher, can't proxy for this. Set a timeout for every 10 seconds and check for new users,
-// update when one shows up.
-//
-// Finally  Put the whole thing in a go-routine that checks for a stop (see the watcher in ineteractive.)
-func continuousArchiveAndPublish(s *mclib.Server) {
-  delayTime := 5 * time.Minute
-  for {
-    users, err := s.Rcon.NumberOfUsers()
-    if err != nil { 
-      log.Error(nil, "Can't get the numbers of users from the server.", err)
-      return
-    } 
-    if users > 0 {
-      archiveAndPublish(s)
-    } else {
-      log.Info(logrus.Fields{"retryDelay": delayTime.String(),}, "No users on server. Not updating the archive.")
-    }
-    time.Sleep(delayTime)
-  }
-}
-
-func archiveAndPublish(s *mclib.Server) {
-
-  resp, err := s.SnapshotAndPublish()
-
-  archiveFields := logrus.Fields{
-    "user": s.User,
-    "serverName": s.Name,
-    "serverDir": s.ServerDirectory,
-    "bucket": s.ArchiveBucket,
-  }
-  if err != nil {
-    log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
-  } else {
-    archiveFields["bucket"] = resp.BucketName
-    archiveFields["archive"] = resp.StoredPath
-    log.Info(archiveFields, "Published archive.")
-  }
-}
-
-// func archiveAndPublish(rcon *mclib.Rcon, archiveDir, bucketName, user string, cfg *aws.Config) {
-//   archiveFields := logrus.Fields{"archiveDir": archiveDir,"bucket": bucketName, "user": user, }
-//   resp, err := mclib.ArchiveAndPublish(rcon, archiveDir, bucketName, user, cfg)
-//   if err != nil {
-//     log.Error(archiveFields, "Error creating an archive and publishing to S3.", err)
-//   } else {
-//     archiveFields["bucket"] = resp.BucketName
-//     archiveFields["archive"] = resp.StoredPath
-//     log.Info(archiveFields, "Published archive.")
-//   }
-// }
-
 func bogusTest() (string) {
   return "hello"
 }
-
 
 func configureLogs() {
   setFormatter()
   updateLogLevel()
 }
 
-// TODO: Clearly this should set a *formatter in the switch
-// and then set each of the loggers to that formater.
-// The foramtters are of different types though, and 
-// lorgus.Formatter is an interface so I can't create a 
-// var out of it. I konw there is a way, I just don't know what it is.func setFormatter() {
-// Log formats.
+
 const (
   jsonLog = "json"
   textLog = "text"
 )
+
 func setFormatter() {
+  var f logrus.Formatter
   switch logsFormatArg {
   case jsonLog:
-    f := new(logrus.JSONFormatter)
-    log.SetFormatter(f)
-    mclib.SetLogFormatter(f)
+    f = new(logrus.JSONFormatter)
   case textLog:
-    f := new(sl.TextFormatter)
-    f.FullTimestamp = true
-    log.SetFormatter(f)
-    mclib.SetLogFormatter(f)
+    s := new(sl.TextFormatter)
+    s.FullTimestamp = true
+    f = logrus.Formatter(s)
   }
+  log.SetFormatter(f)
+  mclib.SetLogFormatter(f)
+  lib.SetLogFormatter(f)
 }
 
 func updateLogLevel() {
@@ -374,5 +282,5 @@ func updateLogLevel() {
   }
   log.SetLevel(l)
   mclib.SetLogLevel(l)
-}
+  lib.SetLogLevel(l) }
 
