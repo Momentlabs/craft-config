@@ -9,8 +9,8 @@ import(
   "text/tabwriter"
   l "craft-config/lib"
   "github.com/aws/aws-sdk-go/aws/session"
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 func doArchiveServer(sess *session.Session) (err error) {

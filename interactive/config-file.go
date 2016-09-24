@@ -2,8 +2,8 @@ package interactive
 
 import(
   "fmt"
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 

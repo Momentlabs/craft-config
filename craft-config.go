@@ -13,8 +13,8 @@ import (
 
   // "awslib"
   "github.com/jdrivas/awslib"
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 

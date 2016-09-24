@@ -8,8 +8,8 @@ import(
   "strings"
   "github.com/chzyer/readline"
 
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 // TODO: Put this into mclib.

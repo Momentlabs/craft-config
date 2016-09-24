@@ -14,8 +14,8 @@ import (
   "github.com/jdrivas/sl"
   "github.com/Sirupsen/logrus"
 
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 const(

@@ -5,8 +5,8 @@ import(
   "time"
   // "github.com/Sirupsen/logrus"
 
-  "mclib"
-  // "github.com/jdrivas/mclib"
+  // "mclib"
+  "github.com/jdrivas/mclib"
 )
 
 func doArchiveAndPublish(server *mclib.Server) {
