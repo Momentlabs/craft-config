@@ -103,7 +103,7 @@ func init() {
   archiveAndPublishCmd.Flag("noRcon", "Don't try to use the RCON connection on the server to start/stop saving.  UNSAFE").Default("true").BoolVar(&useRconArg)
   archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").Int64Var(&rconPortArg)
   archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPasswordArg)
-  archiveAndPublishCmd.Flag("rcon-retries", "Number of times to retry the connection before failure..").Default("20").IntVar(&rconRetriesArg)
+  archiveAndPublishCmd.Flag("rcon-retries", "Number of times to retry the connection before failure..").Default("-1").IntVar(&rconRetriesArg)
   archiveAndPublishCmd.Flag("rcon-delay", "Number of seconds to wait between retries..").Default("5").IntVar(&rconDelayArg)
   archiveAndPublishCmd.Flag("archive-directory","Where the server data is located.").Default(".").StringVar(&archiveDirectoryArg)
   archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
