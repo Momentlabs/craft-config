@@ -12,7 +12,7 @@ import (
 const(
   major = 0
   minor = 0
-  dot = 10
+  dot = 11
 )
 // These will get set by ldFlags during the build.
 var (

@@ -151,6 +151,8 @@ func main() {
   accountAliases, err := awslib.GetAccountAliases(sess.Config)
   if err == nil {
     log.Debug(logrus.Fields{"account": *accountAliases[0], "region": *sess.Config.Region}, "craft-config startup.")
+  } else {
+    log.Error(logrus.Fields{"region": *sess.Config.Region,}, "Craft-config startup: couldn't obtain account Alises.", err)
   }
 
   // Command line args trump the environment.
@@ -158,11 +160,9 @@ func main() {
   serverName := serverNameArg
   archiveBucketName := bucketNameArg
   if userArg == "" && serverNameArg == "" { // get them from the env
-    // TODO: THESE ARE ACTUALLY DEFINED IN ecs-craft. The clearly need
-    // to be moved somewhere else, probably mclib.
-    ServerUserKey := "SERVER_USER"
-    ServerNameKey := "SERVER_NAME"
-    ArchiveBucketKey := "ARCHIVE_BUCKET"
+    ServerUserKey := mclib.ServerUserKey
+    ServerNameKey := mclib.ServerNameKey
+    ArchiveBucketKey := mclib.ArchiveBucketKey
     if u := os.Getenv(ServerUserKey); u != "" {
       userName = u
     }
@@ -213,7 +213,7 @@ func main() {
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
     // TODO: send along a server to the interactive UI as well.
-    interactive.DoInteractive(sess)
+    interactive.DoInteractive(debug, sess)
   } else {
     commandMap[command](server)
   }

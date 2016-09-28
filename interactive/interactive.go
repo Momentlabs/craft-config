@@ -41,6 +41,7 @@ var (
 
   exitCmd *kingpin.CmdClause
   quitCmd *kingpin.CmdClause
+  awsAccountCmd *kingpin.CmdClause
   verboseCmd *kingpin.CmdClause
   versionCmd *kingpin.CmdClause
   logFormatCmd *kingpin.CmdClause
@@ -128,6 +129,8 @@ func init() {
   quitCmd = app.Command("quit", "exit the program.")
   logFormatCmd = app.Command("log", "set the log format")
   logFormatCmd.Arg("format", "What format should we use").Default(defaultLogFormat).EnumVar(&logFormatArg, jsonLog, textLog)
+  awsAccountCmd = app.Command("aws", "Display what we know about the conneciton to AWS.")
+
 
   // Query a server.
   queryCmd = app.Command("query", "Use the rcon conneciton to query a running mc server.")
@@ -154,8 +157,8 @@ func init() {
 
   archiveServerCmd = archiveCmd.Command("server", "Archive a server into a zip file.")
   archiveServerCmd.Arg("type", "Server or World snapshot.").Required().StringVar(&archiveTypeArg)
-  archiveServerCmd.Arg("user", "Username for the server for archibing").Required().StringVar(&userNameArg)
-  archiveServerCmd.Arg("server", "Servername for the server for archibing").Required().StringVar(&serverNameArg)
+  archiveServerCmd.Arg("user", "Username for the server for archiving").Required().StringVar(&userNameArg)
+  archiveServerCmd.Arg("server", "Servername for the server for archiving").Required().StringVar(&serverNameArg)
   archiveServerCmd.Arg("archive-files", "list of files to archive.").StringsVar(&archiveFilesArg)
   archiveServerCmd.Flag("bucket", "Name of S3 bucket to publish archive to.").Default(defaultArchiveBucket).StringVar(&bucketNameArg)
   archiveServerCmd.Flag("archive-file-name", "Name of archive (zip) file to create.").Default(defaultArchiveFile).StringVar(&archiveFileNameArg)
@@ -216,6 +219,7 @@ func doICommand(line string, sess *session.Session) (err error) {
       case logFormatCmd.FullCommand(): err = doLogFormat()
       case exitCmd.FullCommand(): err = doQuit()
       case quitCmd.FullCommand(): err = doQuit()
+      case awsAccountCmd.FullCommand(): err = doAwsAccount(sess)
       case rconCmd.FullCommand(): err = doRcon()
       case queryCmd.FullCommand(): err = doQuery()
       case readServerConfigFileCmd.FullCommand(): err = doReadServerConfigFile()
@@ -367,7 +371,11 @@ func doQuit() (error) {
 }
 
 // This gets called from the main program, presumably from the 'interactive' command on main's command line.
-func DoInteractive(sess *session.Session) {
+func DoInteractive(debugCmdLine bool, sess *session.Session) {
+  if debugCmdLine {
+    debug = true
+  }
+  configureLogs()
   prompt := "craft-config > "
   err := lib.PromptLoop(prompt, func(line string) (err error) {
     return doICommand(line, sess)
