@@ -140,7 +140,7 @@ func main() {
     sess, err = session.NewSession()
   } else {
     log.Debug(f, "Getting AWS session with default with Profile.")
-    sess, err = awslib.GetSession(awsProfileArg, "")
+    sess, err = awslib.GetSession(awsProfileArg)
   }
 
   if err != nil {
