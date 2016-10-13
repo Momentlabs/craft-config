@@ -87,11 +87,11 @@ func doArchiveServer(sess *session.Session) (err error) {
     if e := resp.PutObjectOutput.ETag; e != nil { etag = *e }
     w := tabwriter.NewWriter(os.Stdout, 4, 8, 3, ' ', 0)
     fmt.Printf("%s%sArchive Response.%s\n", l.TitleColor, time.Now().Local().Format(time.RFC1123), l.ResetColor)
-    fmt.Fprintf(w, "%sUser\tBucket\tArchiveFile\tVersion\tEtag%s\n", l.TitleColor, l.ResetColor)
-    fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\t%s%s\n", l.NullColor,
-      resp.UserName, resp.BucketName, resp.ArchiveFilename, version, etag, l.ResetColor)
+    fmt.Fprintf(w, "Bucket\tArchiveFile\tVersion\tEtag%s\n", l.TitleColor, l.ResetColor)
+    fmt.Fprintf(w, "%s%s\t%s\t%s\t%s%s\n", l.NullColor,
+      resp.BucketName, resp.ArchiveFilename, version, etag, l.ResetColor)
     w.Flush()
-    fmt.Printf("Path: %s\n", resp.StoredPath)
+    fmt.Printf("Path: %s\n", resp.Key)
     }
 
 
@@ -102,7 +102,7 @@ func doArchiveServer(sess *session.Session) (err error) {
 func doPublishArchive(sess *session.Session) (error) {
   resp, err := mclib.PublishArchive(archiveFileNameArg, bucketNameArg, userNameArg, sess)
   if err == nil {
-    fmt.Printf("Published archive to: %s:%s\n", resp.BucketName, resp.StoredPath)
+    fmt.Printf("Published archive to: %s\n", resp.URI())
   }
   return err
 }

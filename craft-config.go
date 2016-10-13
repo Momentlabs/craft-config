@@ -132,10 +132,14 @@ func main() {
   // Configure AWS for acrhive.
   //
 
+  f := logrus.Fields{
+    "controllerVersion": version.Version.String(),
+    "profile": awsProfileArg, 
+    "region": awsRegionArg,
+  }
+
   // Note: We rely on NewSession to accomdate general defaults,
   // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
-  f := logrus.Fields{"profile": awsProfileArg, "region": awsRegionArg,}
-
   if awsProfileArg == "" {
     log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
     sess, err = session.NewSession()

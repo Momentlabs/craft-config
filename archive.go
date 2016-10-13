@@ -3,6 +3,7 @@ package main
 import(
   "fmt"
   "time"
+  "ecs-craft/version"
   // "github.com/Sirupsen/logrus"
 
   // "mclib"
@@ -52,8 +53,10 @@ func continuousArchiveAndPublish(s *mclib.Server) {
   userFields := s.LogFields()
   userFields["users"] = 0
   userFields["delay"] = backupDelay.String()
+  userFields["controllerVersion"] = version.Version.String()
   delayFields := s.LogFields()
   delayFields["delay"] = backupDelay.String()
+  delayFields["controllerVersion"] = version.Version.String()
 
   backupTimeoutCheck := time.Tick(backupDelay)
   newUserCheck := time.Tick(userCheckDelay)
@@ -107,19 +110,6 @@ func continuousArchiveAndPublish(s *mclib.Server) {
   }
 }
 
-    // users, err := s.Rcon.NumberOfUsers()
-    // if err != nil { 
-    //   log.Error(nil, "Can't get the numbers of users from the server.", err)
-    //   return
-    // } 
-    // if users > 0 {
-    //   archiveAndPublish(s)
-    // } else {
-    //   log.Info(logrus.Fields{"retryDelay": delayTime.String(),}, "No users on server. Not updating the archive.")
-    // }
-    // time.Sleep(delayTime)
-
-
 // Check for users, do the backup and report out.
 func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   userFields := s.LogFields()
@@ -144,7 +134,8 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   if err != nil {
     log.Error(userFields, "Error creating an archive and publishing to S3.", err)
   } else {
-    userFields["archive"] = resp.StoredPath
+    userFields["uri"] = resp.URI()
+    userFields["archive"] = resp.Key
     userFields["eTag"] =  *resp.PutObjectOutput.ETag
     log.Info(userFields, "Published archive.")
   }
