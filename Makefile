@@ -8,10 +8,13 @@ darwin_target := $(release_dir)/$(prog)_darwin_amd64
 linux_target := $(release_dir)/$(prog)_linux_amd64 
 # binaries := $(release_dir)/$(prog)_darwin_amd64 $(release_dir)/$(prog)_linux_amd64
 
+.PHONY: check-env
+
 help:
 	@echo make release-build \# Creates the binaries: $(binaries)
 	@echo make new-release version=v0.0.2 description="This is an early release." \# creates a release on github.
-	@echo make release-publish version=v0.0.2 \# pushes the binaries to the github release.
+	@echo make publish-release version=v0.0.2 \# pushes the binaries to the github release.
+	@echo Must define GITHUB_TOKEN to use the release commands.
 
 clean:
 	rm -rf release
@@ -42,13 +45,17 @@ release-build: $(builds)
 # TODO: Consider doing some git tagging and building in a file for description.
 # TODO: Note that this doesn't guarantee tha the source in the repo and the binary
 # match. It relies on there already being a git commit and push.
-new-release: clean release-build
+new-release: clean release-build check-env
 	@echo creating release on github, version: ${version}: $(description)
 	github-release release -u Momentlabs -r craft-config -t ${version} -d "${description}"
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f $(release_dir)/$(prog)_linux_amd64
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f $(release_dir)/$(prog)_darwin_amd64
 
-publish-release: release-build
+publish-release: release-build check_env
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f $(release_dir)/$(prog)_linux_amd64
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f $(release_dir)/$(prog)_darwin_amd64
 
+check-env:
+ifndef GITHUB_TOKEN
+	$(error GITHUB_TOKEN is undefined.)
+endif
