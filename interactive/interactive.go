@@ -26,7 +26,7 @@ const(
   defaultRconAddr = defaultServerIp + ":25575"
   defaultUser = "testuser"
   defaeultServerName = "craft-config-test-server"
-  defaultArchiveBucket = "craft-config-test"
+  defaultArchiveBucket = "momentlabs-test"
   defaultArchiveFile = "server.zip"
 
   defaultLogFormat = textLog

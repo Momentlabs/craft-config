@@ -9,6 +9,7 @@ import(
   "text/tabwriter"
   l "craft-config/lib"
   "github.com/aws/aws-sdk-go/aws/session"
+
   // "mclib"
   "github.com/jdrivas/mclib"
 )
@@ -115,14 +116,20 @@ func doListArchive(sess *session.Session) (err error) {
   userName := userNameArg
   bucketName := bucketNameArg
 
+  am, err := mclib.GetArchives(userName, bucketName, sess )
+  if err != nil { return err }
+
   var al []mclib.Archive
   if archiveTypeArg == NoArchiveTypeArg {
-    am, err := mclib.GetArchives(userName, bucketName, sess )
-    if err != nil { return err }
-    al = am[userName]
+    al = make([]mclib.Archive,0)
+    for _, serverMap := range am {
+      for _, archiveList := range serverMap {
+        al = append(al, archiveList...)
+      }
+    }
   } else {
     t := mclib.ArchiveTypeFrom(archiveTypeArg)
-    al, err = mclib.GetArchivesFor(t, userName, bucketName, sess)
+    al = am.GetArchives(userName, t)
   }
   sort.Sort(mclib.ByLastMod(al))
 

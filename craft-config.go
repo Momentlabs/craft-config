@@ -20,6 +20,7 @@ import (
 
 var (
   DEFAULT_REGION = "us-west-1"
+  DefaultBucket = "momentlabs-test"
 )
 
 var (
@@ -106,7 +107,7 @@ func init() {
   archiveAndPublishCmd.Flag("rcon-retries", "Number of times to retry the connection before failure..").Default("-1").IntVar(&rconRetriesArg)
   archiveAndPublishCmd.Flag("rcon-delay", "Number of seconds to wait between retries..").Default("5").IntVar(&rconDelayArg)
   archiveAndPublishCmd.Flag("archive-directory","Where the server data is located.").Default(".").StringVar(&archiveDirectoryArg)
-  archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default("craft-config-test").StringVar(&bucketNameArg)
+  archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default(DefaultBucket).StringVar(&bucketNameArg)
   archiveAndPublishCmd.Arg("user", "Name of user of the server were achiving.").StringVar(&userArg)
   archiveAndPublishCmd.Arg("server-name", "Name of the server were archiving.").StringVar(&serverNameArg)
 
@@ -136,23 +137,24 @@ func main() {
   f := logrus.Fields{"profile": awsProfileArg, "region": awsRegionArg,}
 
   if awsProfileArg == "" {
-    log.Debug(f, "Getting AWS session with NewSession() and defaults.")
+    log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
     sess, err = session.NewSession()
   } else {
-    log.Debug(f, "Getting AWS session with default with Profile.")
+    log.Debug(f, "Controller starting up: Getting AWS session with default with Profile.")
     sess, err = awslib.GetSession(awsProfileArg)
   }
 
   if err != nil {
     log.Error(logrus.Fields{"profile": awsProfileArg,}, 
-      "Can't get aws configuration information for session.", err)
+      "Controller starting up: Can't get aws configuration information for session.", err)
   }
 
   accountAliases, err := awslib.GetAccountAliases(sess.Config)
+  f["region"] = *sess.Config.Region
   if err == nil {
-    log.Debug(logrus.Fields{"account": *accountAliases[0], "region": *sess.Config.Region}, "craft-config startup.")
+    f["account"] = accountAliases[0]
   } else {
-    log.Error(logrus.Fields{"region": *sess.Config.Region,}, "Craft-config startup: couldn't obtain account Alises.", err)
+    log.Error(f, "Craft-config startup: couldn't obtain account aliases.", err)
   }
 
   // Command line args trump the environment.
@@ -173,11 +175,16 @@ func main() {
       archiveBucketName = b
     }
   }
-  log.Debug(logrus.Fields{
-    "userName": userName, 
-    "serverName": serverName, 
-    "bucketName": archiveBucketName,
-  }, "Got user, server and bucket names.")
+  clusterName := "<none>"
+  if cn := os.Getenv(mclib.ClusterNameKey); cn != "" {
+    clusterName = cn
+  }
+  taskArn := "<none>"
+  if tn := os.Getenv(mclib.TaskArnKey); tn  != "" {
+    taskArn = tn
+  }
+
+
 
   // TODO: need to use some kind of Action function on the args.
   serverPort := mclib.Port(25565)
@@ -192,16 +199,27 @@ func main() {
   server := &mclib.Server{
     User: userName,
     Name: serverName,
-    // ClusterName: clusteNameArg,
+    ClusterName: clusterName,
     PublicServerIp: serverIpArg,
     // PrivateServerIp: 
     ServerPort: mclib.Port(serverPort),
     RconPort: mclib.Port(rconPort),
     RconPassword: rconPasswordArg,
     ArchiveBucket: archiveBucketName,
+    TaskArn: &taskArn,
     ServerDirectory: archiveDirectoryArg,
     AWSSession: sess,
-  }
+  }  
+  f["userName"] = server.User
+  f["serverName"] = server.Name
+  f["bucketName"] = server.ArchiveBucket
+  f["clusterName"] = server.ClusterName
+  f["taskArn"] = server.TaskArn
+  f["publicServerIp"] = server.PublicServerIp
+  f["serverPort"] = server.ServerPort
+  f["rconPort"] = server.RconPort
+  log.Info(f, "Controller Start up complete.")
+
 
   commandMap := map[string]func(*mclib.Server) {
     listServerConfig.FullCommand(): doListServerConfig,
@@ -273,6 +291,7 @@ func setFormatter() {
   log.SetFormatter(f)
   mclib.SetLogFormatter(f)
   lib.SetLogFormatter(f)
+  awslib.SetLogFormatter(f)
 }
 
 func updateLogLevel() {
@@ -282,5 +301,6 @@ func updateLogLevel() {
   }
   log.SetLevel(l)
   mclib.SetLogLevel(l)
-  lib.SetLogLevel(l) }
-
+  lib.SetLogLevel(l)
+  awslib.SetLogLevel(l)
+}
