@@ -118,7 +118,7 @@ func init() {
 func main() {
   command := kingpin.MustParse(app.Parse(os.Args[1:]))
   if command == versionCmd.FullCommand() {
-    fmt.Println(version.Version)
+    fmt.Println(version.Version.String())
     os.Exit(0)
   }
 

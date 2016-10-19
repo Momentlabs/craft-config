@@ -50,13 +50,13 @@ const(
 )
 func continuousArchiveAndPublish(s *mclib.Server) {
 
-  userFields := s.LogFields()
-  userFields["users"] = 0
-  userFields["delay"] = backupDelay.String()
-  userFields["controllerVersion"] = version.Version.String()
-  delayFields := s.LogFields()
-  delayFields["delay"] = backupDelay.String()
-  delayFields["controllerVersion"] = version.Version.String()
+  f := s.LogFields()
+  f["serverBackupTick"] = backupDelay.String()
+  f["userCheckTick"] = userCheckDelay.String()
+  f["controllerVersion"] = version.Version.String()
+  f["operation"] = "Snapshot"
+  f["snapshotType"] = "<none>"
+
 
   backupTimeoutCheck := time.Tick(backupDelay)
   newUserCheck := time.Tick(userCheckDelay)
@@ -84,26 +84,37 @@ func continuousArchiveAndPublish(s *mclib.Server) {
     currentUsers, err = s.Rcon.NumberOfUsers();
     change := currentUsers != lastUsers
     if err != nil {
-      log.Error(delayFields, "Can't get the number of users from the server. Will wait.", err)
+      f["users"] = "<unknown>"
+      log.Error(f, "Can't get the number of users from the server. Will wait.", err)
       s.NewRcon() // TODO: Consider doing this with a retry.
     } else {
-      userFields["users"] = currentUsers
+      f["users"] = currentUsers
       // If there are users, backup worlds and server every backuptimeout.
       // If we add or remove a user then catch that in a world backup.
+      // TODO: FOR THE MOMENT IT SEEMS CLEAR THAT WE SHOULD RESTART FROM
+      // SERVER BACKUPs. Which means I need them to happen more often.
       if currentUsers > 0 {
         if change && wakeUpReason == newUser {
-          log.Info(userFields, "Archiving worlds.")
+          f["snapshotType"] = mclib.WorldSnapshot.String()
+          log.Info(f, "Archiving worlds.")
           archiveAndPublish(s, mclib.WorldSnapshot)
+          f["snapshotType"] = mclib.ServerSnapshot.String()
+          log.Info(f, "Archiving server.")
+          archiveAndPublish(s, mclib.ServerSnapshot)
         } else if wakeUpReason == backupTimeout {
-          log.Info(userFields, "Archiving worlds.")
+          f["snapshotType"] = mclib.WorldSnapshot.String()
+          log.Info(f, "Archiving worlds.")
           archiveAndPublish(s, mclib.WorldSnapshot)
-          log.Info(userFields, "Archiving server.")
+          f["snapshotType"] = mclib.ServerSnapshot.String()
+          log.Info(f, "Archiving server.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else {
-          log.Info(userFields, "No changes. Not archiving")
+          f["snapshotType"] = "<none>"
+          log.Info(f, "No changes. Not archiving")
         }
       } else {
-        log.Info(userFields, "No users on server. Not archiving")
+        f["snapshotType"] = "<none>"
+        log.Info(f, "No users on server. Not archiving")
       }
     }
     lastUsers = currentUsers
@@ -112,19 +123,19 @@ func continuousArchiveAndPublish(s *mclib.Server) {
 
 // Check for users, do the backup and report out.
 func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
-  userFields := s.LogFields()
-  userFields["serverDir"] = s.ServerDirectory
-  userFields["bucket"] = s.ArchiveBucket
-  userFields["archiveType"] = aType.String()
+  f := s.LogFields()
+  f["serverDir"] = s.ServerDirectory
+  f["bucket"] = s.ArchiveBucket
+  f["snapshotType"] = aType.String()
 
   var resp *mclib.PublishedArchiveResponse
   var err error
   switch aType {
   case mclib.ServerSnapshot: 
-    log.Info(userFields,"Backup server.")
+    log.Info(f,"Snapshot server.")
     resp, err = s.TakeServerSnapshot()
   case mclib.WorldSnapshot: 
-    log.Info(userFields,"Backup World.")
+    log.Info(f,"Snapshot World.")
     resp, err = s.TakeWorldSnapshot()
   default:
     resp = nil
@@ -132,12 +143,12 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   }
 
   if err != nil {
-    log.Error(userFields, "Error creating an archive and publishing to S3.", err)
+    log.Error(f, "Error creating an archive and publishing to S3.", err)
   } else {
-    userFields["uri"] = resp.URI()
-    userFields["archive"] = resp.Key
-    userFields["eTag"] =  *resp.PutObjectOutput.ETag
-    log.Info(userFields, "Published archive.")
+    f["uri"] = resp.URI()
+    f["archive"] = resp.Key
+    f["eTag"] =  *resp.PutObjectOutput.ETag
+    log.Info(f, "Published archive.")
   }
 }
 
