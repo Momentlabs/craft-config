@@ -3,7 +3,7 @@ package main
 import(
   "fmt"
   "time"
-  "ecs-craft/version"
+  "craft-config/version"
   // "github.com/Sirupsen/logrus"
 
   // "mclib"
@@ -42,6 +42,8 @@ func doArchiveAndPublish(server *mclib.Server) {
 // or so and check for new users, update when one shows up.
 //
 // Finally  Put the whole thing in a go-routine that checks for a stop (see the watcher in ineteractive.)
+
+// TODO: Probably time to make these both command line paramaters.
 const backupDelay = 5 * time.Minute
 const userCheckDelay = 30 * time.Second
 const(
@@ -54,8 +56,7 @@ func continuousArchiveAndPublish(s *mclib.Server) {
   f["serverBackupTick"] = backupDelay.String()
   f["userCheckTick"] = userCheckDelay.String()
   f["controllerVersion"] = version.Version.String()
-  f["operation"] = "Snapshot"
-  f["snapshotType"] = "<none>"
+  f["operation"] = "SnapshotCheck"
 
 
   backupTimeoutCheck := time.Tick(backupDelay)
@@ -94,19 +95,26 @@ func continuousArchiveAndPublish(s *mclib.Server) {
       // TODO: FOR THE MOMENT IT SEEMS CLEAR THAT WE SHOULD RESTART FROM
       // SERVER BACKUPs. Which means I need them to happen more often.
       if currentUsers > 0 {
+        f["operation"] = "SnapshotCheck"
         if change && wakeUpReason == newUser {
-          f["snapshotType"] = mclib.WorldSnapshot.String()
-          log.Info(f, "Archiving worlds.")
+          f["operation"] = "Snapshot"
+
+          f["snapshotType"] = mclib.WorldSnapshot
+          log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
-          f["snapshotType"] = mclib.ServerSnapshot.String()
-          log.Info(f, "Archiving server.")
+
+          f["snapshotType"] = mclib.Servernapshot
+          log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else if wakeUpReason == backupTimeout {
-          f["snapshotType"] = mclib.WorldSnapshot.String()
-          log.Info(f, "Archiving worlds.")
+          f["operation"] = "Snapshot"
+
+          f["snapshotType"] = mclib.WorldSnapshot
+          log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
-          f["snapshotType"] = mclib.ServerSnapshot.String()
-          log.Info(f, "Archiving server.")
+
+          f["snapshotType"] = mclib.Servernapshot
+          log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else {
           f["snapshotType"] = "<none>"
@@ -127,15 +135,14 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   f["serverDir"] = s.ServerDirectory
   f["bucket"] = s.ArchiveBucket
   f["snapshotType"] = aType.String()
+  f["operation"] = "Snapshot"
 
   var resp *mclib.PublishedArchiveResponse
   var err error
   switch aType {
   case mclib.ServerSnapshot: 
-    log.Info(f,"Snapshot server.")
     resp, err = s.TakeServerSnapshot()
   case mclib.WorldSnapshot: 
-    log.Info(f,"Snapshot World.")
     resp, err = s.TakeWorldSnapshot()
   default:
     resp = nil
@@ -148,7 +155,8 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
     f["uri"] = resp.URI()
     f["archive"] = resp.Key
     f["eTag"] =  *resp.PutObjectOutput.ETag
-    log.Info(f, "Published archive.")
+    f["result"] = "Success"
+    log.Info(f, "Snapshot successful.")
   }
 }
 
