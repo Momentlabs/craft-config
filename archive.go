@@ -103,7 +103,7 @@ func continuousArchiveAndPublish(s *mclib.Server) {
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
 
-          f["snapshotType"] = mclib.Servernapshot
+          f["snapshotType"] = mclib.ServerSnapshot
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else if wakeUpReason == backupTimeout {
@@ -113,7 +113,7 @@ func continuousArchiveAndPublish(s *mclib.Server) {
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
 
-          f["snapshotType"] = mclib.Servernapshot
+          f["snapshotType"] = mclib.ServerSnapshot
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else {
