@@ -12,8 +12,8 @@ import (
 const(
   major = 0
   minor = 0
-  dot = 15
-)
+  dot = 18
+  
 // These will get set by ldFlags during the build.
 var (
   // buildstamp string

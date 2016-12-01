@@ -96,29 +96,30 @@ func continuousArchiveAndPublish(s *mclib.Server) {
       // SERVER BACKUPs. Which means I need them to happen more often.
       if currentUsers > 0 {
         f["operation"] = "SnapshotCheck"
+
         if change && wakeUpReason == newUser {
           f["operation"] = "Snapshot"
 
-          f["snapshotType"] = mclib.WorldSnapshot
+          f["snapshotType"] = mclib.WorldSnapshot.String()
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
 
-          f["snapshotType"] = mclib.ServerSnapshot
+          f["snapshotType"] = mclib.ServerSnapshot.String()
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else if wakeUpReason == backupTimeout {
           f["operation"] = "Snapshot"
 
-          f["snapshotType"] = mclib.WorldSnapshot
+          f["snapshotType"] = mclib.WorldSnapshot.String()
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.WorldSnapshot)
 
-          f["snapshotType"] = mclib.ServerSnapshot
+          f["snapshotType"] = mclib.ServerSnapshot.String()
           log.Info(f, "Taking snapshot.")
           archiveAndPublish(s, mclib.ServerSnapshot)
         } else {
           f["snapshotType"] = "<none>"
-          log.Info(f, "No changes. Not archiving")
+          log.Info(f, "No change in number of users. Not archiving")
         }
       } else {
         f["snapshotType"] = "<none>"
@@ -140,7 +141,7 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   var resp *mclib.PublishedArchiveResponse
   var err error
   switch aType {
-  case mclib.ServerSnapshot: 
+  case mclib.ServerSnapshot:
     resp, err = s.TakeServerSnapshot()
   case mclib.WorldSnapshot: 
     resp, err = s.TakeWorldSnapshot()
@@ -150,7 +151,7 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   }
 
   if err != nil {
-    log.Error(f, "Error creating an archive and publishing to S3.", err)
+    log.Error(f, "Error creating and publishing an archive to S3.", err)
   } else {
     f["uri"] = resp.URI()
     f["archive"] = resp.Key
@@ -158,5 +159,17 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
     f["result"] = "Success"
     log.Info(f, "Snapshot successful.")
   }
+}
+
+func logStatus(s *mclib.Server) {
+  f := s.LogFields()
+  f["controllerVersion"] = version.Version.String()
+  if users, err := s.Rcon.NumberOfUsers(); err == nil {
+    f["users"] = users
+  } else {
+    log.Error(f,"Failed to get number of users from server.", err)
+  }
+  f["serverUptime"] = s.UptimeString()
+  f["craftType"] = s.CraftType()
 }
 

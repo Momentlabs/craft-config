@@ -9,6 +9,7 @@ import (
   "craft-config/version"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/jdrivas/sl"
+  // "sl"
   "github.com/Sirupsen/logrus"
 
   // "awslib"
@@ -105,7 +106,7 @@ func init() {
   archiveAndPublishCmd.Flag("rcon-port", "Port of server for rcon connection.").Default("25575").Int64Var(&rconPortArg)
   archiveAndPublishCmd.Flag("rcon-pw", "PW to connect ot the rcon server.").Default("testing").StringVar(&rconPasswordArg)
   archiveAndPublishCmd.Flag("rcon-retries", "Number of times to retry the connection before failure..").Default("-1").IntVar(&rconRetriesArg)
-  archiveAndPublishCmd.Flag("rcon-delay", "Number of seconds to wait between retries..").Default("5").IntVar(&rconDelayArg)
+  archiveAndPublishCmd.Flag("rcon-delay", "Number of seconds to wait between retries.").Default("5").IntVar(&rconDelayArg)
   archiveAndPublishCmd.Flag("archive-directory","Where the server data is located.").Default(".").StringVar(&archiveDirectoryArg)
   archiveAndPublishCmd.Flag("bucket-name","S3 bucket for archive storage.").Default(DefaultBucket).StringVar(&bucketNameArg)
   archiveAndPublishCmd.Arg("user", "Name of user of the server were achiving.").StringVar(&userArg)
@@ -122,45 +123,16 @@ func main() {
     os.Exit(0)
   }
 
-  configureLogs()
-
-  // Get the default session
-  var sess *session.Session
-  var err error
-
-  //
-  // Configure AWS for acrhive.
-  //
-
-  f := logrus.Fields{
-    "controllerVersion": version.Version.String(),
-    "profile": awsProfileArg, 
-    "region": awsRegionArg,
+  commandMap := map[string]func(*mclib.Server) {
+    listServerConfig.FullCommand(): doListServerConfig,
+    modifyServerConfig.FullCommand(): doModifyServerConfig,
+    archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
+    queryCmd.FullCommand(): doQuery,
   }
 
-  // Note: We rely on NewSession to accomdate general defaults,
-  // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
-  if awsProfileArg == "" {
-    log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
-    sess, err = session.NewSession()
-  } else {
-    log.Debug(f, "Controller starting up: Getting AWS session with default with Profile.")
-    sess, err = awslib.GetSession(awsProfileArg)
-  }
+  // TODO: Should we just get the Server Variables from ECS?
 
-  if err != nil {
-    log.Error(logrus.Fields{"profile": awsProfileArg,}, 
-      "Controller starting up: Can't get aws configuration information for session.", err)
-  }
-
-  accountAliases, err := awslib.GetAccountAliases(sess.Config)
-  f["region"] = *sess.Config.Region
-  if err == nil {
-    f["account"] = accountAliases[0]
-  } else {
-    log.Error(f, "Craft-config startup: couldn't obtain account aliases.", err)
-  }
-
+  // Parse out all the variables and build a Server to work on.
   // Command line args trump the environment.
   userName := userArg
   serverName := serverNameArg
@@ -188,8 +160,6 @@ func main() {
     taskArn = tn
   }
 
-
-
   // TODO: need to use some kind of Action function on the args.
   serverPort := mclib.Port(25565)
   rconPort := mclib.Port(25575)
@@ -213,24 +183,47 @@ func main() {
     TaskArn: &taskArn,
     ServerDirectory: archiveDirectoryArg,
     AWSSession: sess,
-  }  
-  f["userName"] = server.User
-  f["serverName"] = server.Name
-  f["bucketName"] = server.ArchiveBucket
-  f["clusterName"] = server.ClusterName
-  f["taskArn"] = server.TaskArn
-  f["publicServerIp"] = server.PublicServerIp
-  f["serverPort"] = server.ServerPort
-  f["rconPort"] = server.RconPort
-  log.Info(f, "Controller Start up complete.")
+  } 
 
+  configureLogs(server)
 
-  commandMap := map[string]func(*mclib.Server) {
-    listServerConfig.FullCommand(): doListServerConfig,
-    modifyServerConfig.FullCommand(): doModifyServerConfig,
-    archiveAndPublishCmd.FullCommand(): doArchiveAndPublish,
-    queryCmd.FullCommand(): doQuery,
+  // Get the default session
+  var sess *session.Session
+  var err error
+
+  //
+  // Configure AWS for acrhive.
+  //
+
+  f := logrus.Fields{
+    "profile": awsProfileArg, 
+    "region": awsRegionArg,
   }
+  log.Info(f,"Controller Start up complete.")
+
+  // Note: We rely on NewSession to accomdate general defaults,
+  // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
+  if awsProfileArg == "" {
+    log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
+    sess, err = session.NewSession()
+  } else {
+    log.Debug(f, "Controller starting up: Getting AWS session with default with Profile.")
+    sess, err = awslib.GetSession(awsProfileArg)
+  }
+
+  if err != nil {
+    log.Error(logrus.Fields{"profile": awsProfileArg,}, 
+      "Controller starting up: Can't get aws configuration information for session.", err)
+  }
+
+  accountAliases, err := awslib.GetAccountAliases(sess.Config)
+  f["region"] = *sess.Config.Region
+  if err == nil {
+    f["account"] = accountAliases[0]
+  } else {
+    log.Error(f, "Craft-config startup: couldn't obtain account aliases.", err)
+  }
+
 
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
@@ -271,9 +264,10 @@ func bogusTest() (string) {
   return "hello"
 }
 
-func configureLogs() {
+func configureLogs(s *mclib.Server) {
   setFormatter()
   updateLogLevel()
+  setDefaultLogFields(s)
 }
 
 
@@ -281,6 +275,25 @@ const (
   jsonLog = "json"
   textLog = "text"
 )
+
+func setDefaultLogFields(server *mclib.Server) {
+  f := logrus.Fields{
+    "controllerVersion": version.Version.String(),
+    "userName": server.User,
+    "serverName": server.Name,
+    "bucketName": server.ArchiveBucket,
+    "clusterName": server.ClusterName,
+    "taskArn": server.TaskArn,
+    "publicServerIp": server.PublicServerIp,
+    "serverPort": server.ServerPort,
+    "rconPort": server.RconPort,
+  }
+  if s := os.Getenv(mclib.RoleKey); s != "" {
+    f["containerRole"] = s
+  }
+
+    log.SetDefaultFields(f)
+}
 
 func setFormatter() {
   var f logrus.Formatter
