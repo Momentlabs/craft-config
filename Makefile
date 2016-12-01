@@ -51,7 +51,7 @@ new-release: clean release-build check-env
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f $(release_dir)/$(prog)_linux_amd64
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f $(release_dir)/$(prog)_darwin_amd64
 
-publish-release: release-build check_env
+publish-release: release-build check-env
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_linux_amd64 -f $(release_dir)/$(prog)_linux_amd64
 	github-release upload -u Momentlabs -r craft-config -t ${version} -n craft-config_darwin_amd64 -f $(release_dir)/$(prog)_darwin_amd64
 
