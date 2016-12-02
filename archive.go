@@ -151,6 +151,7 @@ func archiveAndPublish(s *mclib.Server, aType mclib.ArchiveType) {
   }
 
   if err != nil {
+    f["result"] = "Failure"
     log.Error(f, "Error creating and publishing an archive to S3.", err)
   } else {
     f["uri"] = resp.URI()

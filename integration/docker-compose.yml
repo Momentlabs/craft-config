@@ -1,0 +1,67 @@
+version: '2'
+services: 
+
+  craft-controller-test:
+
+  # images:  033441544097.dkr.ecr.us-east-1.amazonaws.com/craft-config-builder
+    image:  craft-controller-test
+    container_name: craft-controller
+    environment:
+      - CONTAINER_ROLE=CraftController
+      - CLUSTER_NAME=Local_Laptop
+      - SERVER_USER=test_user
+      - SERVER_NAME=test_server_name
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+
+    # Map the local server directory to the container for archive etc.
+    volumes_from:
+        - craft-server-test
+
+    links:
+      - craft-server-test
+
+    entrypoint: 
+      - /usr/local/bin/craft-config
+      - archive
+      - --log-format=text
+      - --server-ip=craft-server-test
+      - --debug
+      - --region=us-east-1
+      # - --continuous
+      # - --archive-directory=
+
+  craft-server-test:
+    image:  033441544097.dkr.ecr.us-east-1.amazonaws.com/craft-server
+    container_name: minecraft-server
+
+    ports:
+    - "25565:25565"
+    - "25575:25575"
+
+    # volumes:
+      # - /Users/jdr/Dropbox (Personal)/Development/docker/containers/dockerfiles/minecraft-server/data:/data
+    environment:
+      - CONTAINER_ROLE=CraftServer
+      - CLUSTER_NAME=Local_Laptop
+      - EULA=true
+      - TYPE=SPIGOT
+      - ENABLE_RCON=true
+      - RCON_PASSWORD=testing
+      - RCON_PORT=25575
+      - ENABLE_QUERY=true
+      - QUERY_PORT=25565
+      - MODE=creative
+      - FORCE_GAMEMODE=true
+      - OPS=jdrivas
+      - MOTD="Vanilla test server in a docker container."
+      - ONLINE_MODE=false
+      - SERVER_USER=test_user
+      - SERVER_NAME=test-name
+
+  # rsyslogd:
+  #   image:  033441544097.dkr.ecr.us-east-1.amazonaws.com/craft-rsyslog
+  #   container_name: rsyslogd
+  #   ports: 
+  #     - 10514:514
+

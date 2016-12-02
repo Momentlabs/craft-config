@@ -7,6 +7,7 @@ import (
   "craft-config/interactive"
   "craft-config/lib"
   "craft-config/version"
+  "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/jdrivas/sl"
   // "sl"
@@ -123,6 +124,7 @@ func main() {
     os.Exit(0)
   }
 
+  // Commands we'll respond to  with associated functions.
   commandMap := map[string]func(*mclib.Server) {
     listServerConfig.FullCommand(): doListServerConfig,
     modifyServerConfig.FullCommand(): doModifyServerConfig,
@@ -130,7 +132,52 @@ func main() {
     queryCmd.FullCommand(): doQuery,
   }
 
+  configureLogs()
+  appName := os.Args[0]
+  f := logrus.Fields{
+    "executable": appName,
+  }
+
+  //
+  // Configure AWS for acrhiving.
+  //
+  // if akid := os.Getenv("AWS_ACCESS_KEY_ID"); akid != "" {
+  //   fmt.Printf("FOUND AWS_ACCESS_KEY: %s\n", akid)
+  // } else {
+  //   fmt.Printf("DIDN'T FIND AWS_ACCESS_KEY\n")
+  // }
+
+  // if sak := os.Getenv("AWS_SECRET_ACCESS_KEY"); sak != ""  {
+  //   fmt.Printf("FOUND AWS_SECRET_ACCESS_KEY: %s\n", sak)
+  // } else {
+  //   fmt.Printf("DIDN'T FIND AWS_SECRET_ACCESS_KEY\n")
+  // }
+
+
+  var err error
+  // Note: We rely on NewSession to accomdate general defaults,
+  // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
+  if awsProfileArg == "" {
+    log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
+    sess, err = session.NewSession()
+  } else {
+    log.Debug(f, "Controller starting up: Getting AWS session with default with Profile.")
+    sess, err = awslib.GetSession(awsProfileArg)
+  }
+
+  if err != nil {
+    log.Error(logrus.Fields{"profile": awsProfileArg,}, 
+      "Controller starting up: Can't get aws configuration information for session.", err)
+  }
+
+  // Normally this should have come from profiles and defaults, but 
+  // there are certain testing cases where this seems easier.
+  if sess.Config.Region == nil || *sess.Config.Region == "" {
+    sess.Config.Region = aws.String(awsRegionArg)
+  }
+
   // TODO: Should we just get the Server Variables from ECS?
+  // ie. mclib.GetServerByName()
 
   // Parse out all the variables and build a Server to work on.
   // Command line args trump the environment.
@@ -184,46 +231,17 @@ func main() {
     ServerDirectory: archiveDirectoryArg,
     AWSSession: sess,
   } 
-
-  configureLogs(server)
-
-  // Get the default session
-  var sess *session.Session
-  var err error
-
-  //
-  // Configure AWS for acrhive.
-  //
-
-  f := logrus.Fields{
-    "profile": awsProfileArg, 
-    "region": awsRegionArg,
-  }
-  log.Info(f,"Controller Start up complete.")
-
-  // Note: We rely on NewSession to accomdate general defaults,
-  // but, in particular, it supports auto EC2 IAMRole credential provisionsing.
-  if awsProfileArg == "" {
-    log.Debug(f, "Controller starting up: Getting AWS session with NewSession() and defaults.")
-    sess, err = session.NewSession()
-  } else {
-    log.Debug(f, "Controller starting up: Getting AWS session with default with Profile.")
-    sess, err = awslib.GetSession(awsProfileArg)
-  }
-
-  if err != nil {
-    log.Error(logrus.Fields{"profile": awsProfileArg,}, 
-      "Controller starting up: Can't get aws configuration information for session.", err)
-  }
+  setDefaultLogFields(server)
 
   accountAliases, err := awslib.GetAccountAliases(sess.Config)
   f["region"] = *sess.Config.Region
   if err == nil {
-    f["account"] = accountAliases[0]
+    f["account"] = *accountAliases[0]
   } else {
     log.Error(f, "Craft-config startup: couldn't obtain account aliases.", err)
   }
 
+  log.Info(f, "Craft-config startup is complete.")
 
   // Execute the command.
   if interactiveCmd.FullCommand() == command {
@@ -264,10 +282,9 @@ func bogusTest() (string) {
   return "hello"
 }
 
-func configureLogs(s *mclib.Server) {
+func configureLogs() {
   setFormatter()
   updateLogLevel()
-  setDefaultLogFields(s)
 }
 
 

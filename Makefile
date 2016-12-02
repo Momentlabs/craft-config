@@ -40,7 +40,7 @@ darwin_build : $(darwin_target)
 linux_build :
 	docker-compose up --force-recreate 
 
-release-build: $(builds)
+release-build: clean $(builds)
 
 # TODO: Consider doing some git tagging and building in a file for description.
 # TODO: Note that this doesn't guarantee tha the source in the repo and the binary

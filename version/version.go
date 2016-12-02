@@ -12,11 +12,12 @@ import (
 const(
   major = 0
   minor = 0
-  dot = 18
-  
+  dot = 19
+)
+
 // These will get set by ldFlags during the build.
 var (
-  // buildstamp string
+    // buildstamp string
   githash string
   environ string
   unixtime string
